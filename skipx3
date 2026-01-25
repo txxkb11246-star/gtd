@@ -1,0 +1,103 @@
+task.wait(5) -- รอเกมโหลดก่อน (ปรับได้)
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local ChangeTickSpeed = ReplicatedStorage
+    :WaitForChild("RemoteFunctions")
+    :WaitForChild("ChangeTickSpeed")
+
+-- =========================
+-- ฟังก์ชันเปลี่ยนความเร็ว
+-- =========================
+local function setSpeed(multiplier)
+    pcall(function()
+        ChangeTickSpeed:InvokeServer(multiplier)
+    end)
+end
+
+local function x2()
+    setSpeed(2)
+end
+
+local function x3()
+    setSpeed(3)
+end
+
+-- =========================
+-- AutoSkip
+-- =========================
+local function autoSkip()
+    task.spawn(function()
+        local gui = player.PlayerGui:WaitForChild("GameGuiNoInset", 10)
+        if not gui then return end
+
+        local btn = gui:WaitForChild("Screen", 10)
+            :WaitForChild("Top", 10)
+            :WaitForChild("WaveControls", 10)
+            :WaitForChild("AutoSkip", 10)
+
+        local title = btn:WaitForChild("Title", 10)
+
+        while task.wait(1) do
+            if title.Text == "Auto Skip: Off" then
+                for _, c in pairs(getconnections(btn.MouseButton1Click)) do
+                    c:Fire()
+                end
+            end
+        end
+    end)
+end
+
+-- =========================
+-- Setting Functions
+-- =========================
+local function low()
+    ReplicatedStorage:WaitForChild("RemoteFunctions")
+        :WaitForChild("ChangeSetting")
+        :InvokeServer("st_graphics", 2)
+end
+
+local function mvol()
+    ReplicatedStorage:WaitForChild("RemoteFunctions")
+        :WaitForChild("ChangeSetting")
+        :InvokeServer("st_background_music_volume", 1)
+end
+
+local function fxvol()
+    ReplicatedStorage:WaitForChild("RemoteFunctions")
+        :WaitForChild("ChangeSetting")
+        :InvokeServer("st_fx_volume", 1)
+end
+
+-- =========================
+-- กด ESC
+-- =========================
+local function pressEsc()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+end
+
+-- =========================
+-- ลำดับการทำงาน
+-- =========================
+low()
+mvol()
+fxvol()
+
+x2()
+task.wait(0.5)
+
+autoSkip()
+
+task.wait(5)
+x3()
+
+-- หลัง x3 รอ 2 วิ แล้วกด ESC 2 ครั้ง
+task.wait(5)
+pressEsc()
+task.wait(2)
+pressEsc()
