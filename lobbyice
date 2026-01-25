@@ -1,0 +1,76 @@
+task.wait(3)
+local rs = game:GetService("ReplicatedStorage")
+local rf = rs:WaitForChild("RemoteFunctions")
+local ws = game:GetService("Workspace")
+local player = game.Players.LocalPlayer
+
+-- ตรวจว่าอยู่ใน Lobby หรือ Farm
+local function isInLobby()
+    local map = ws:FindFirstChild("Map")
+    if not map then return false end
+    return map:FindFirstChild("Garden") ~= nil
+end
+
+-- กำหนดตำแหน่งและ RemoteFunction ที่ใช้
+local farmConfig = {
+    {
+        pos = CFrame.new(85.0509491, 71.7316132, 788.809753, 1,0,0, 0,1,0, 0,0,1),
+        mapFunc = "LobbySetMap_5",
+        playerFunc = "LobbySetMaxPlayers_5"
+    },
+    {
+        pos = CFrame.new(97.050827, 71.7316132, 788.809814, 1,0,0, 0,1,0, 0,0,1),
+        mapFunc = "LobbySetMap_6",
+        playerFunc = "LobbySetMaxPlayers_6"
+    },
+    {
+        pos = CFrame.new(109.050949, 71.7316132, 788.809753, 1,0,0, 0,1,0, 0,0,1),
+        mapFunc = "LobbySetMap_7",
+        playerFunc = "LobbySetMaxPlayers_7"
+    },
+    {
+        pos = CFrame.new(121.050888, 71.7316132, 788.809753, 1,0,0, 0,1,0, 0,0,1),
+        mapFunc = "LobbySetMap_8",
+        playerFunc = "LobbySetMaxPlayers_8"
+    }
+}
+
+-- วาร์ปไปจุดฟาร์ม
+local function warpToFarm(cfg)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = cfg.pos
+        print("📍 วาร์ปไปจุดฟาร์มแล้ว:", cfg.pos)
+    end
+end
+
+-- ตั้งค่าด่านและจำนวนผู้เล่น
+local function setupLobby(cfg)
+    task.wait(4) -- ✅ รอ 4 วิหลังวาร์ป
+    rf:WaitForChild(cfg.mapFunc):InvokeServer("map_christmas")
+    print("🎯 เลือกด่าน map_farm ด้วย:", cfg.mapFunc)
+    task.wait(1)
+    for i = 3, 1, -1 do
+        rf:WaitForChild(cfg.playerFunc):InvokeServer(i)
+        print("👥 ตั้งจำนวนผู้เล่น:", i, "ด้วย:", cfg.playerFunc)
+        task.wait(0.5)
+    end
+end
+
+-- วนเช็คจนเข้าเซิร์ฟฟาร์ม
+local function waitUntilFarm()
+    while isInLobby() do
+        -- ✅ สุ่มตำแหน่ง
+        local index = math.random(1, #farmConfig)
+        local cfg = farmConfig[index]
+
+        warpToFarm(cfg)
+        setupLobby(cfg)
+        task.wait(10) -- ✅ เปลี่ยนเป็นรอ 10 วิ
+    end
+    print("✅ เข้าสู่เซิร์ฟฟาร์มแล้ว เริ่ม AutoFarm")
+    runAutoRound() -- ← ฟังก์ชัน AutoFarm ที่คุณมีอยู่แล้ว
+end
+
+-- เริ่มทำงาน
+waitUntilFarm()
