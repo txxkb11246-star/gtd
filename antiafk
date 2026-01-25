@@ -1,0 +1,46 @@
+task.wait(5)
+-- [[ Roblox Anti-AFK: Simple VIM Mode ]]
+-- เน้นความเรียบง่าย จุดสีเขียวคงที่ และสุ่มคลิกขวา
+
+local VirtualUser = game:GetService("VirtualUser")
+local Player = game:GetService("Players").LocalPlayer
+
+-- [1] สร้าง UI จุดสีเขียวแบบคงที่ (Small & Clear Green Dot)
+local sg = Instance.new("ScreenGui")
+sg.Name = "SimpleVIM_UI"
+sg.Parent = Player:WaitForChild("PlayerGui")
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 10, 0, 10) -- ปรับขนาดให้เล็กลงตามคำขอ
+dot.Position = UDim2.new(0, 30, 1, -30) -- ตำแหน่งมุมซ้ายล่าง
+dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- สีเขียว Neon คงที่
+dot.BorderSizePixel = 0
+dot.ZIndex = 999
+dot.Parent = sg
+
+-- ใส่ขอบดำให้มองเห็นง่ายบนทุกพื้นผิว
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(0, 0, 0)
+stroke.Parent = dot
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = dot
+
+-- [2] ระบบ Virtual Input Mouse (สุ่มคลิกขวา)
+task.spawn(function()
+    while true do
+        -- สุ่มเวลารอระหว่าง 30 ถึง 80 วินาที เพื่อความเป็นธรรมชาติ
+        local waitTime = math.random(30, 80)
+        task.wait(waitTime)
+
+        -- จำลองการคลิกขวาแบบ Virtual Input
+        -- ส่งสัญญาณเข้า Engine โดยตรงเพื่อ Reset Idle Timer
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
+        
+        -- แสดงสถานะใน Output (เผื่อไว้เช็ค)
+        print("VIM: Virtual Right-Click executed. Next in: " .. waitTime .. "s")
+    end
+end)
