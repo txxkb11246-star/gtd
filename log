@@ -1,0 +1,78 @@
+-- =================================
+-- nosalt LOG | FULL CLIENT SCRIPT
+-- =================================
+
+-- ===== CONFIG =====
+local SERVER_URL = "https://nosalt-log--dusfaaq.replit.app/log"
+local HEARTBEAT_INTERVAL = 10
+
+-- ถ้ามาจากปุ่ม Copy Script
+local PC_NAME = getgenv().PC_NAME or "PC_DEFAULT"
+
+-- ===== SERVICES =====
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+
+-- ===== GET SEED LABEL (MAP เดิม) =====
+local function getSeedLabel()
+    local gui = player:WaitForChild("PlayerGui")
+    return gui
+        :WaitForChild("GameGui")
+        :WaitForChild("Screen")
+        :WaitForChild("Bottom")
+        :WaitForChild("CurrencyDisplay")
+        :WaitForChild("SeedsDisplay")
+        :WaitForChild("Title")
+end
+
+local seedLabel = getSeedLabel()
+
+-- ===== UTILS =====
+local function parseSeed(text)
+    text = tostring(text):gsub(",", "")
+    return tonumber(text) or 0
+end
+
+local function send(seed, delta)
+    local payload = {
+        pc = PC_NAME,
+        username = player.Name,
+        seed = seed,
+        delta = delta
+    }
+
+    pcall(function()
+        HttpService:PostAsync(
+            SERVER_URL,
+            HttpService:JSONEncode(payload),
+            Enum.HttpContentType.ApplicationJson
+        )
+    end)
+end
+
+-- ===== STATE =====
+local lastSeed = parseSeed(seedLabel.Text)
+
+-- ===== FIRST LOG =====
+send(lastSeed, 0)
+
+-- ===== REALTIME SEED CHANGE =====
+seedLabel:GetPropertyChangedSignal("Text"):Connect(function()
+    local current = parseSeed(seedLabel.Text)
+    if current ~= lastSeed then
+        local delta = current - lastSeed
+        lastSeed = current
+        send(current, delta)
+    end
+end)
+
+-- ===== HEARTBEAT (ONLINE CHECK) =====
+task.spawn(function()
+    while true do
+        task.wait(HEARTBEAT_INTERVAL)
+        send(lastSeed, 0)
+    end
+end)
+
+warn("[nosalt LOG] Started | PC:", PC_NAME, "| User:", player.Name)
