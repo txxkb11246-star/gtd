@@ -1,103 +1,103 @@
--- =====================================
--- NOSALT LOG | ROBLOX CLIENT (FIXED)
--- =====================================
+-- ===============================
+-- NOSALT LOGGER | ROBLOX CLIENT
+-- ===============================
 
--- ===== EXECUTOR HTTP =====
-local http = request or http_request or (syn and syn.request)
+-- HTTP WRAPPER (รองรับหลาย executor)
+local http =
+    request or
+    http_request or
+    (syn and syn.request) or
+    (fluxus and fluxus.request)
+
 if not http then
     warn("[nosalt] Executor has no http support")
     return
 end
 
--- ===== SERVICES =====
+-- SERVICES
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
--- ===== CONFIG =====
-local API_URL = "https://YOUR-REPLIT-URL/api/log"
+-- ===============================
+-- CONFIG (ใช้ของคุณตรง ๆ)
+-- ===============================
+local API_URL = "https://lt-log-dusfaaq.replit.app/apilog"
 local HEARTBEAT_INTERVAL = 5
 
--- ===== IDENTITIES =====
+-- ===============================
+-- IDENTITIES
+-- ===============================
 local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
 local PC_ID = tostring(game.JobId)
-local CLIENT_ID = tostring(player.UserId .. "_" .. math.random(1000,9999))
+local CLIENT_ID = tostring(player.UserId)
 
--- ===== SAFE NUMBER =====
-local function toNumber(v)
-    if not v then return 0 end
-    v = tostring(v):gsub(",", "")
-    local n = tonumber(v)
-    if not n or n ~= n then return 0 end
-    return n
-end
+-- ===============================
+-- SEND FUNCTION
+-- ===============================
+local function sendLog(message, extra)
+    local payload = {
+        pc_id = PC_ID,
+        pc_name = PC_NAME,
+        client_id = CLIENT_ID,
+        player_name = player.Name,
+        place_id = game.PlaceId,
+        job_id = game.JobId,
+        message = message,
+        extra = extra or {},
+        timestamp = os.time()
+    }
 
--- ===== FIND SEED LABEL =====
-local function findSeedLabel()
-    local gui = player:FindFirstChild("PlayerGui")
-    if not gui then return nil end
-
-    for _,v in ipairs(gui:GetDescendants()) do
-        if v:IsA("TextLabel") then
-            if v.Text:lower():find("seed") then
-                return v
-            end
-        end
-    end
-    return nil
-end
-
--- ===== SEND =====
-local function send(payload)
-    payload.pc_id = PC_ID
-    payload.pc_name = PC_NAME
-    payload.client = CLIENT_ID
-    payload.username = player.Name
-    payload.time = os.time()
-
-    pcall(function()
+    local ok, err = pcall(function()
         http({
             Url = API_URL,
             Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
             Body = HttpService:JSONEncode(payload)
         })
     end)
+
+    if not ok then
+        warn("[nosalt] Send failed:", err)
+    end
 end
 
--- ===== CONNECT =====
-send({ type = "connect" })
-print("[nosalt] Connected | PC:", PC_NAME, "| Client:", CLIENT_ID)
+-- ===============================
+-- CONNECT LOG
+-- ===============================
+sendLog("Connected")
 
--- ===== SEED WATCH =====
+-- ===============================
+-- HEARTBEAT (Still Alive)
+-- ===============================
 task.spawn(function()
-    local label
-    local lastSeed = 0
-
-    while true do
-        task.wait(1)
-
-        if not label then
-            label = findSeedLabel()
-            continue
-        end
-
-        local current = toNumber(label.Text)
-        if current ~= lastSeed then
-            send({
-                type = "seed",
-                seed = current,
-                delta = current - lastSeed
-            })
-            lastSeed = current
-        end
+    while task.wait(HEARTBEAT_INTERVAL) do
+        sendLog("Still Alive")
     end
 end)
 
--- ===== HEARTBEAT =====
-task.spawn(function()
-    while true do
-        task.wait(HEARTBEAT_INTERVAL)
-        send({ type = "heartbeat" })
+-- ===============================
+-- PLAYER EVENTS
+-- ===============================
+player.AncestryChanged:Connect(function(_, parent)
+    if not parent then
+        sendLog("Disconnected")
     end
 end)
+
+-- ===============================
+-- GAME CLOSE
+-- ===============================
+game:BindToClose(function()
+    sendLog("Game Closing")
+    task.wait(1)
+end)
+
+-- ===============================
+-- DEBUG CONFIRM
+-- ===============================
+print("[nosalt] Logger loaded | PC:", PC_NAME)
