@@ -1,96 +1,109 @@
 -- =====================================================
--- NOSALT | HERMANOS STYLE LOGGER
+-- NOSALT LOG | ROBLOX CLIENT (FULL VERSION)
 -- =====================================================
 
+-- HTTP support
 local http = request or http_request or syn.request
 if not http then
-    warn("[nosalt] Executor has no http support")
+    warn("[nosalt] Executor has no HTTP support")
     return
 end
 
--- SERVICES
+-- Services
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
--- CONFIG (API URL ของคุณ)
-local API_URL = "https://nosalt-log.dusfaaq.repl.co/apilog"
+-- ===== CONFIG (ของคุณจริง) =====
+local API_URL = "https://nosalt-log--dusfaaq.replit.app/api/log"
 
--- IDENTITIES
+-- ===== IDENTITY =====
 local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
 local PC_ID = tostring(game.JobId)
+local CLIENT_ID = tostring(player.UserId)
 local USERNAME = player.Name
-local USER_ID = tostring(player.UserId)
 
--- STATE
+-- ===== STATE =====
 local lastSeed = 0
-local lastPing = 0
+local running = true
 
--- SAFE NUMBER
+-- ===== UTILS =====
 local function toNumber(v)
     if not v then return 0 end
-    local n = tonumber(tostring(v):gsub(",", ""))
-    return n or 0
+    return tonumber(tostring(v):gsub(",", "")) or 0
 end
 
--- GET SEED
+-- ===== GET SEED =====
 local function getSeed()
+    -- leaderstats
     local stats = player:FindFirstChild("leaderstats")
-    if not stats then return lastSeed end
-
-    for _,v in pairs(stats:GetChildren()) do
-        if v.Name:lower():find("seed") then
-            return toNumber(v.Value)
+    if stats then
+        for _,v in pairs(stats:GetChildren()) do
+            if v.Name:lower():find("seed") then
+                return toNumber(v.Value)
+            end
         end
     end
+
+    -- attribute fallback
+    if workspace:GetAttribute("Seed") then
+        return toNumber(workspace:GetAttribute("Seed"))
+    end
+
     return lastSeed
 end
 
--- SEND LOG
-local function send(type, data)
-    http({
-        Url = API_URL,
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode({
-            pc_name = PC_NAME,
-            pc_id = PC_ID,
-            username = USERNAME,
-            user_id = USER_ID,
-            seed = lastSeed,
-            type = type,
-            data = data,
-            time = os.time()
+-- ===== SEND LOG =====
+local function send(action, seed)
+    local body = {
+        pc_id = PC_ID,
+        pc_name = PC_NAME,
+        client = CLIENT_ID,
+        username = USERNAME,
+        seed = seed or lastSeed,
+        action = action,
+        time = os.time()
+    }
+
+    pcall(function()
+        http({
+            Url = API_URL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(body)
         })
-    })
+    end)
 end
 
--- CONNECT
-send("connect", "Connected")
+-- ===== START =====
+send("CONNECT", lastSeed)
 
 -- HEARTBEAT
 task.spawn(function()
-    while true do
-        send("heartbeat", "Still Alive")
+    while running do
+        send("HEARTBEAT", lastSeed)
         task.wait(5)
     end
 end)
 
 -- SEED WATCHER
 task.spawn(function()
-    while true do
-        local seed = getSeed()
-        if seed ~= lastSeed then
-            lastSeed = seed
-            send("seed", seed)
+    while running do
+        local s = getSeed()
+        if s ~= lastSeed then
+            lastSeed = s
+            send("SEED_UPDATE", lastSeed)
         end
-        task.wait(2)
+        task.wait(1)
     end
 end)
 
 -- DISCONNECT
 game:BindToClose(function()
-    send("disconnect", "Left Game")
+    running = false
+    send("DISCONNECT", lastSeed)
+    task.wait(1)
 end)
+
+warn("[nosalt] Started | PC:", PC_NAME, "| User:", USERNAME)
