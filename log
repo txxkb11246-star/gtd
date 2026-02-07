@@ -1,8 +1,9 @@
 -- ===============================
 -- NOSALT LOGGER | ROBLOX CLIENT
+-- FIXED VERSION (NO BindToClose)
 -- ===============================
 
--- HTTP WRAPPER (รองรับหลาย executor)
+-- HTTP WRAPPER
 local http =
     request or
     http_request or
@@ -22,7 +23,7 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 -- ===============================
--- CONFIG (ใช้ของคุณตรง ๆ)
+-- CONFIG (ของคุณตรง ๆ)
 -- ===============================
 local API_URL = "https://lt-log-dusfaaq.replit.app/apilog"
 local HEARTBEAT_INTERVAL = 5
@@ -50,7 +51,7 @@ local function sendLog(message, extra)
         timestamp = os.time()
     }
 
-    local ok, err = pcall(function()
+    pcall(function()
         http({
             Url = API_URL,
             Method = "POST",
@@ -60,44 +61,45 @@ local function sendLog(message, extra)
             Body = HttpService:JSONEncode(payload)
         })
     end)
-
-    if not ok then
-        warn("[nosalt] Send failed:", err)
-    end
 end
 
 -- ===============================
--- CONNECT LOG
+-- CONNECT
 -- ===============================
 sendLog("Connected")
 
 -- ===============================
--- HEARTBEAT (Still Alive)
+-- HEARTBEAT (ONLINE STATUS)
 -- ===============================
+local alive = true
+
 task.spawn(function()
-    while task.wait(HEARTBEAT_INTERVAL) do
+    while alive do
+        task.wait(HEARTBEAT_INTERVAL)
         sendLog("Still Alive")
     end
 end)
 
 -- ===============================
--- PLAYER EVENTS
+-- DISCONNECT DETECT
 -- ===============================
 player.AncestryChanged:Connect(function(_, parent)
     if not parent then
+        alive = false
         sendLog("Disconnected")
     end
 end)
 
 -- ===============================
--- GAME CLOSE
+-- FAILSAFE (EXECUTOR STOP / TELEPORT)
 -- ===============================
-game:BindToClose(function()
-    sendLog("Game Closing")
-    task.wait(1)
+RunService.Heartbeat:Connect(function()
+    if not player or not player.Parent then
+        alive = false
+    end
 end)
 
 -- ===============================
--- DEBUG CONFIRM
+-- DEBUG
 -- ===============================
 print("[nosalt] Logger loaded | PC:", PC_NAME)
