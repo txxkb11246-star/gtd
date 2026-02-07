@@ -1,5 +1,5 @@
 -- =====================================
--- NOSALT LOG | ROBLOX CLIENT (FULL)
+-- NOSALT LOG | ROBLOX CLIENT (FIXED)
 -- =====================================
 
 -- ===== EXECUTOR HTTP =====
@@ -25,20 +25,21 @@ local CLIENT_ID = tostring(player.UserId .. "_" .. math.random(1000,9999))
 
 -- ===== SAFE NUMBER =====
 local function toNumber(v)
+    if not v then return 0 end
     v = tostring(v):gsub(",", "")
     local n = tonumber(v)
     if not n or n ~= n then return 0 end
     return n
 end
 
--- ===== FIND SEED LABEL SAFELY =====
+-- ===== FIND SEED LABEL =====
 local function findSeedLabel()
     local gui = player:FindFirstChild("PlayerGui")
     if not gui then return nil end
 
     for _,v in ipairs(gui:GetDescendants()) do
         if v:IsA("TextLabel") then
-            if string.find(v.Text, "Seed") or string.find(v.Name, "Seed") then
+            if v.Text:lower():find("seed") then
                 return v
             end
         end
@@ -46,7 +47,7 @@ local function findSeedLabel()
     return nil
 end
 
--- ===== SEND TO SERVER =====
+-- ===== SEND =====
 local function send(payload)
     payload.pc_id = PC_ID
     payload.pc_name = PC_NAME
@@ -54,32 +55,23 @@ local function send(payload)
     payload.username = player.Name
     payload.time = os.time()
 
-    local ok, err = pcall(function()
+    pcall(function()
         http({
             Url = API_URL,
             Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
+            Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode(payload)
         })
     end)
-
-    if not ok then
-        warn("[nosalt] Send failed:", err)
-    end
 end
 
--- ===== CONNECT EVENT =====
-send({
-    type = "connect"
-})
-
+-- ===== CONNECT =====
+send({ type = "connect" })
 print("[nosalt] Connected | PC:", PC_NAME, "| Client:", CLIENT_ID)
 
--- ===== SEED WATCHER =====
+-- ===== SEED WATCH =====
 task.spawn(function()
-    local label = nil
+    local label
     local lastSeed = 0
 
     while true do
@@ -92,14 +84,12 @@ task.spawn(function()
 
         local current = toNumber(label.Text)
         if current ~= lastSeed then
-            local delta = current - lastSeed
-            lastSeed = current
-
             send({
                 type = "seed",
                 seed = current,
-                delta = delta
+                delta = current - lastSeed
             })
+            lastSeed = current
         end
     end
 end)
@@ -108,15 +98,6 @@ end)
 task.spawn(function()
     while true do
         task.wait(HEARTBEAT_INTERVAL)
-        send({
-            type = "heartbeat"
-        })
+        send({ type = "heartbeat" })
     end
-end)
-
--- ===== DISCONNECT =====
-game:BindToClose(function()
-    send({
-        type = "disconnect"
-    })
 end)
