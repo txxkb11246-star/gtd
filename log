@@ -1,63 +1,41 @@
 -- =====================================================
---  NOSALT CLIENT LOGGER (FULL VERSION)
+-- NOSALT | HERMANOS STYLE LOGGER
 -- =====================================================
 
--- ===== HTTP CHECK =====
 local http = request or http_request or syn.request
 if not http then
     warn("[nosalt] Executor has no http support")
     return
 end
 
--- ===== SERVICES =====
+-- SERVICES
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
--- ===== CONFIG =====
+-- CONFIG (API URL ของคุณ)
 local API_URL = "https://nosalt-log.dusfaaq.repl.co/apilog"
-local HEARTBEAT_INTERVAL = 5
-local LOG_INTERVAL = 10
 
--- ===== IDENTITIES =====
+-- IDENTITIES
 local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
 local PC_ID = tostring(game.JobId)
-local CLIENT_ID = tostring(player.UserId) .. "_" .. math.random(1000,9999)
+local USERNAME = player.Name
+local USER_ID = tostring(player.UserId)
 
--- ===== STATE =====
+-- STATE
 local lastSeed = 0
-local lastSend = 0
+local lastPing = 0
 
--- ===== SAFE NUMBER =====
+-- SAFE NUMBER
 local function toNumber(v)
     if not v then return 0 end
-    local s = tostring(v):gsub(",", "")
-    local n = tonumber(s)
-    if not n then return 0 end
-    return n
+    local n = tonumber(tostring(v):gsub(",", ""))
+    return n or 0
 end
 
--- ===== SEND LOG =====
-local function sendLog(message, seed)
-    http({
-        Url = API_URL,
-        Method = "POST",
-        Headers = {
-            ["Content-Type"] = "application/json"
-        },
-        Body = HttpService:JSONEncode({
-            pc_id = PC_ID,
-            pc_name = PC_NAME,
-            client = CLIENT_ID,
-            seed = seed or lastSeed,
-            message = message
-        })
-    })
-end
-
--- ===== SEED DETECTION =====
+-- GET SEED
 local function getSeed()
     local stats = player:FindFirstChild("leaderstats")
     if not stats then return lastSeed end
@@ -67,41 +45,52 @@ local function getSeed()
             return toNumber(v.Value)
         end
     end
-
     return lastSeed
 end
 
--- ===== STILL ALIVE =====
+-- SEND LOG
+local function send(type, data)
+    http({
+        Url = API_URL,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            pc_name = PC_NAME,
+            pc_id = PC_ID,
+            username = USERNAME,
+            user_id = USER_ID,
+            seed = lastSeed,
+            type = type,
+            data = data,
+            time = os.time()
+        })
+    })
+end
+
+-- CONNECT
+send("connect", "Connected")
+
+-- HEARTBEAT
 task.spawn(function()
     while true do
-        sendLog("Still Alive", lastSeed)
-        task.wait(HEARTBEAT_INTERVAL)
+        send("heartbeat", "Still Alive")
+        task.wait(5)
     end
 end)
 
--- ===== MAIN LOOP =====
+-- SEED WATCHER
 task.spawn(function()
     while true do
         local seed = getSeed()
         if seed ~= lastSeed then
             lastSeed = seed
-            sendLog("Seed Update", seed)
+            send("seed", seed)
         end
-        task.wait(LOG_INTERVAL)
+        task.wait(2)
     end
 end)
 
--- ===== INIT =====
-sendLog("Connected | PC: "..PC_NAME.." | Client: "..CLIENT_ID, 0)
-
--- ===== HEARTBEAT =====
-RunService.Heartbeat:Connect(function()
-    if tick() - lastSend > 30 then
-        sendLog("Heartbeat Sync", lastSeed)
-        lastSend = tick()
-    end
+-- DISCONNECT
+game:BindToClose(function()
+    send("disconnect", "Left Game")
 end)
-
--- =====================================================
---  END
--- =====================================================
