@@ -1,14 +1,9 @@
--- =====================================
--- NOSALT LOG | ROBLOX CLIENT (FINAL)
--- =====================================
+-- =====================================================
+--  NOSALT CLIENT LOGGER (FULL VERSION)
+-- =====================================================
 
--- ===== HTTP (executor) =====
-local http =
-    request or
-    http_request or
-    (syn and syn.request) or
-    (fluxus and fluxus.request)
-
+-- ===== HTTP CHECK =====
+local http = request or http_request or syn.request
 if not http then
     warn("[nosalt] Executor has no http support")
     return
@@ -17,96 +12,96 @@ end
 -- ===== SERVICES =====
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
 -- ===== CONFIG =====
-local API_URL = "https://lt-log-dusfaaq.replit.app/apilog"
-local HEARTBEAT = 5
+local API_URL = "https://nosalt-log.dusfaaq.repl.co/apilog"
+local HEARTBEAT_INTERVAL = 5
+local LOG_INTERVAL = 10
 
 -- ===== IDENTITIES =====
 local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
 local PC_ID = tostring(game.JobId)
-local CLIENT_ID = tostring(player.UserId .. "_" .. math.random(1000,9999))
+local CLIENT_ID = tostring(player.UserId) .. "_" .. math.random(1000,9999)
 
--- ===== FIND SEED LABEL (ของคุณจริง) =====
-local function getSeedLabel()
-    return player.PlayerGui
-        :WaitForChild("GameGui")
-        :WaitForChild("Screen")
-        :WaitForChild("Bottom")
-        :WaitForChild("CurrencyDisplay")
-        :WaitForChild("SeedsDisplay")
-        :WaitForChild("Title")
+-- ===== STATE =====
+local lastSeed = 0
+local lastSend = 0
+
+-- ===== SAFE NUMBER =====
+local function toNumber(v)
+    if not v then return 0 end
+    local s = tostring(v):gsub(",", "")
+    local n = tonumber(s)
+    if not n then return 0 end
+    return n
 end
 
-local seedLabel = getSeedLabel()
-
-local function parseSeed(text)
-    text = tostring(text):gsub(",", "")
-    return tonumber(text) or 0
-end
-
--- ===== SEND =====
-local function send(payload)
-    payload.pc_id = PC_ID
-    payload.pc_name = PC_NAME
-    payload.client_id = CLIENT_ID
-    payload.username = player.Name
-    payload.time = os.time()
-
-    pcall(function()
-        http({
-            Url = API_URL,
-            Method = "POST",
-            Headers = {["Content-Type"]="application/json"},
-            Body = HttpService:JSONEncode(payload)
+-- ===== SEND LOG =====
+local function sendLog(message, seed)
+    http({
+        Url = API_URL,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode({
+            pc_id = PC_ID,
+            pc_name = PC_NAME,
+            client = CLIENT_ID,
+            seed = seed or lastSeed,
+            message = message
         })
-    end)
+    })
 end
 
--- ===== START =====
-local lastSeed = parseSeed(seedLabel.Text)
+-- ===== SEED DETECTION =====
+local function getSeed()
+    local stats = player:FindFirstChild("leaderstats")
+    if not stats then return lastSeed end
 
-send({
-    type = "connect",
-    seed = lastSeed,
-    delta = 0
-})
-
--- ===== SEED CHANGE (หัวใจระบบ) =====
-seedLabel:GetPropertyChangedSignal("Text"):Connect(function()
-    local current = parseSeed(seedLabel.Text)
-    if current ~= lastSeed then
-        send({
-            type = "seed",
-            seed = current,
-            delta = current - lastSeed
-        })
-        lastSeed = current
+    for _,v in pairs(stats:GetChildren()) do
+        if v.Name:lower():find("seed") then
+            return toNumber(v.Value)
+        end
     end
-end)
 
--- ===== HEARTBEAT (ONLINE) =====
+    return lastSeed
+end
+
+-- ===== STILL ALIVE =====
 task.spawn(function()
     while true do
-        task.wait(HEARTBEAT)
-        send({
-            type = "heartbeat",
-            seed = lastSeed,
-            delta = 0
-        })
+        sendLog("Still Alive", lastSeed)
+        task.wait(HEARTBEAT_INTERVAL)
     end
 end)
 
--- ===== DISCONNECT DETECT =====
-player.AncestryChanged:Connect(function(_, parent)
-    if not parent then
-        send({
-            type = "disconnect",
-            seed = lastSeed,
-            delta = 0
-        })
+-- ===== MAIN LOOP =====
+task.spawn(function()
+    while true do
+        local seed = getSeed()
+        if seed ~= lastSeed then
+            lastSeed = seed
+            sendLog("Seed Update", seed)
+        end
+        task.wait(LOG_INTERVAL)
     end
 end)
 
-print("[nosalt] Loaded | PC:", PC_NAME, "| Seed:", lastSeed)
+-- ===== INIT =====
+sendLog("Connected | PC: "..PC_NAME.." | Client: "..CLIENT_ID, 0)
+
+-- ===== HEARTBEAT =====
+RunService.Heartbeat:Connect(function()
+    if tick() - lastSend > 30 then
+        sendLog("Heartbeat Sync", lastSeed)
+        lastSend = tick()
+    end
+end)
+
+-- =====================================================
+--  END
+-- =====================================================
