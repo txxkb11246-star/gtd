@@ -1,77 +1,83 @@
--- ===== NOSALT LOG | SAFE ROBLOX CLIENT =====
+-- =====================================
+-- NOSALT LOG | ROBLOX CLIENT (FULL)
+-- =====================================
 
--- ===== CONFIG =====
-local API_URL = "https://nosalt-log--dusfaaq.replit.app/log"
-local HEARTBEAT_INTERVAL = 10
+-- ===== EXECUTOR HTTP =====
+local http = request or http_request or (syn and syn.request)
+if not http then
+    warn("[nosalt] Executor has no http support")
+    return
+end
 
 -- ===== SERVICES =====
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 
--- ===== PC INFO =====
-local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
-local PC_ID = tostring(game.JobId .. "_" .. player.UserId)
+-- ===== CONFIG =====
+local API_URL = "https://YOUR-REPLIT-URL/api/log"
+local HEARTBEAT_INTERVAL = 5
 
--- ===== EXECUTOR HTTP =====
-local http = request or http_request or (syn and syn.request)
-if not http then
-    warn("[nosalt] Executor does not support http request")
-    return
-end
+-- ===== IDENTITIES =====
+local PC_NAME = tostring(getgenv().PC_NAME or "PC_DEFAULT")
+local PC_ID = tostring(game.JobId)
+local CLIENT_ID = tostring(player.UserId .. "_" .. math.random(1000,9999))
 
 -- ===== SAFE NUMBER =====
-local function safeNumber(v)
+local function toNumber(v)
+    v = tostring(v):gsub(",", "")
     local n = tonumber(v)
-    if not n or n ~= n or n == math.huge or n == -math.huge then
-        return 0
-    end
+    if not n or n ~= n then return 0 end
     return n
 end
 
--- ===== SAFE UI FIND =====
-local function findSeedText()
+-- ===== FIND SEED LABEL SAFELY =====
+local function findSeedLabel()
     local gui = player:FindFirstChild("PlayerGui")
     if not gui then return nil end
 
     for _,v in ipairs(gui:GetDescendants()) do
-        if v:IsA("TextLabel") and string.find(v.Text, "Seeds") then
-            return v
+        if v:IsA("TextLabel") then
+            if string.find(v.Text, "Seed") or string.find(v.Name, "Seed") then
+                return v
+            end
         end
     end
     return nil
 end
 
--- ===== SEND LOG =====
-local function sendLog(payload)
-    local body = HttpService:JSONEncode(payload)
+-- ===== SEND TO SERVER =====
+local function send(payload)
+    payload.pc_id = PC_ID
+    payload.pc_name = PC_NAME
+    payload.client = CLIENT_ID
+    payload.username = player.Name
+    payload.time = os.time()
 
-    local res = http({
-        Url = API_URL,
-        Method = "POST",
-        Headers = {
-            ["Content-Type"] = "application/json"
-        },
-        Body = body
-    })
+    local ok, err = pcall(function()
+        http({
+            Url = API_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
 
-    if not res or res.StatusCode ~= 200 then
-        warn("[nosalt] FAILED SEND", res and res.StatusCode)
+    if not ok then
+        warn("[nosalt] Send failed:", err)
     end
 end
 
--- ===== START LOG =====
-sendLog({
-    type = "connect",
-    pc_id = PC_ID,
-    pc_name = PC_NAME,
-    username = player.Name,
-    userId = player.UserId
+-- ===== CONNECT EVENT =====
+send({
+    type = "connect"
 })
 
-print("[nosalt] Connected:", PC_NAME)
+print("[nosalt] Connected | PC:", PC_NAME, "| Client:", CLIENT_ID)
 
--- ===== SEED TRACKER =====
+-- ===== SEED WATCHER =====
 task.spawn(function()
     local label = nil
     local lastSeed = 0
@@ -80,22 +86,19 @@ task.spawn(function()
         task.wait(1)
 
         if not label then
-            label = findSeedText()
+            label = findSeedLabel()
             continue
         end
 
-        local current = safeNumber(label.Text:match("%d+"))
+        local current = toNumber(label.Text)
         if current ~= lastSeed then
             local delta = current - lastSeed
             lastSeed = current
 
-            sendLog({
+            send({
                 type = "seed",
-                pc_id = PC_ID,
-                pc_name = PC_NAME,
                 seed = current,
-                delta = delta,
-                time = os.time()
+                delta = delta
             })
         end
     end
@@ -105,23 +108,15 @@ end)
 task.spawn(function()
     while true do
         task.wait(HEARTBEAT_INTERVAL)
-        sendLog({
-            type = "heartbeat",
-            pc_id = PC_ID,
-            pc_name = PC_NAME,
-            online = true,
-            time = os.time()
+        send({
+            type = "heartbeat"
         })
     end
 end)
 
--- ===== CLEAN EXIT =====
+-- ===== DISCONNECT =====
 game:BindToClose(function()
-    sendLog({
-        type = "disconnect",
-        pc_id = PC_ID,
-        pc_name = PC_NAME,
-        online = false,
-        time = os.time()
+    send({
+        type = "disconnect"
     })
 end)
