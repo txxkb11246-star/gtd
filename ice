@@ -144,7 +144,7 @@ end)
 -- [[ 4. DEPLOYMENT LOGIC ]] --
 
 local function getRandPos(basePos)
-    local r = 4
+    local r = 1.5
     return Vector3.new(
         basePos.X + (math.random() * 2 - 1) * r,
         basePos.Y,
