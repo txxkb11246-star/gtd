@@ -86,7 +86,7 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
--- 🧠 AI ตัดสินใจเส้นทาง (ใช้ร่วมกันทั้งระบบ)
+-- 🧠 AI ตัดสินใจเส้นทาง (อัปเดตแก้ AutoSeed ไป BGarden)
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
@@ -97,13 +97,15 @@ local function GetRoutingPlan()
         if hasRaff then
             targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
         elseif hasLawn then
-            targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = true -- ยังอยากได้ Raff อยู่
+            -- 🎯 แก้ตรงนี้: ถ้าเอา Seed และมี Lawn ให้ไป BGarden
+            targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = true 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
         end
     elseif CONFIG.SelectMap == "AutoGem" then
         if hasLawn then
-            targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = false -- หาเจมใช้แค่ Lawn พอ
+            -- 💎 ถ้าเอา Gem และมี Lawn ให้ไป Space
+            targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
         end
@@ -270,7 +272,7 @@ end
 local httpRequest = get_http_request()
 
 local function updateLogData()
-    if not CONFIG.EnableWebhookLog then return end -- สวิตช์ปิด-เปิด Log
+    if not CONFIG.EnableWebhookLog then return end -- ระบบเช็คเปิดปิด Log
     
     pcall(function()
         local seedText = "0"
@@ -540,9 +542,14 @@ local function RunIceFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        if CheckAndGoLobbyIfRich() then return end
-        pcall(function() rf.RestartGame:InvokeServer() end)
-        task.wait(7) -- Safe delay
+        if not CheckAndGoLobbyIfRich() then
+            -- 🛡️ ระบบกันค้าง: ยิง RestartGame รัวๆ 5 รอบ
+            for i = 1, 5 do
+                pcall(function() rf.RestartGame:InvokeServer() end)
+                task.wait(1.5)
+            end
+        end
+        task.wait(3)
     end
 end
 
@@ -608,9 +615,14 @@ local function RunSpaceFarmMaster()
     while true do
         runSpaceSession()
         task.wait(3)
-        if CheckAndGoLobbyIfRich() then return end
-        pcall(function() rf.RestartGame:InvokeServer() end)
-        task.wait(7)
+        if not CheckAndGoLobbyIfRich() then
+            -- 🛡️ ระบบกันค้าง
+            for i = 1, 5 do
+                pcall(function() rf.RestartGame:InvokeServer() end)
+                task.wait(1.5)
+            end
+        end
+        task.wait(3)
     end
 end
 
@@ -701,9 +713,14 @@ local function RunTomatoFarmMaster()
     while true do
         runTomatoSession()
         task.wait(3)
-        if CheckAndGoLobbyIfRich() then return end
-        pcall(function() rf.RestartGame:InvokeServer() end)
-        task.wait(7)
+        if not CheckAndGoLobbyIfRich() then
+            -- 🛡️ ระบบกันค้าง
+            for i = 1, 5 do
+                pcall(function() rf.RestartGame:InvokeServer() end)
+                task.wait(1.5)
+            end
+        end
+        task.wait(3)
     end
 end
 
@@ -791,9 +808,14 @@ local function RunBGardenFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        if CheckAndGoLobbyIfRich() then return end
-        pcall(function() rf.RestartGame:InvokeServer() end)
-        task.wait(7)
+        if not CheckAndGoLobbyIfRich() then
+            -- 🛡️ ระบบกันค้าง
+            for i = 1, 5 do
+                pcall(function() rf.RestartGame:InvokeServer() end)
+                task.wait(1.5)
+            end
+        end
+        task.wait(3)
     end
 end
 
@@ -858,7 +880,11 @@ local function StartLobbyMasterEngine()
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
-        if CONFIG.SelectMap == "BGarden" then RunBGardenFarmMaster() else RunSpaceFarmMaster() end
+        if CONFIG.SelectMap == "BGarden" or CONFIG.SelectMap == "AutoSeed" then 
+            RunBGardenFarmMaster() 
+        else 
+            RunSpaceFarmMaster() 
+        end
     else RunTomatoFarmMaster() end
 end
 
@@ -878,6 +904,10 @@ else
     DebugLog("🎮 [FARM] สแกนตัวละครที่ใช้ฟาร์มเสร็จสิ้น: ตัดสินใจเล่นโหมด " .. farmUnit)
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
-        if CONFIG.SelectMap == "BGarden" then RunBGardenFarmMaster() else RunSpaceFarmMaster() end
+        if CONFIG.SelectMap == "BGarden" or CONFIG.SelectMap == "AutoSeed" then 
+            RunBGardenFarmMaster() 
+        else 
+            RunSpaceFarmMaster() 
+        end
     else RunTomatoFarmMaster() end
 end
