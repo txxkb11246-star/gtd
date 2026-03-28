@@ -97,7 +97,7 @@ local function GetRoutingPlan()
         if hasRaff then
             targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
         elseif hasLawn then
-            -- 🎯 แก้ตรงนี้: ถ้าเอา Seed และมี Lawn ให้ไป BGarden
+            -- 🎯 แก้ตรงนี้: ถ้าเอา Seed และมี Lawn ให้ไป BGarden ชัวร์ 100%
             targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = true 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
@@ -272,7 +272,7 @@ end
 local httpRequest = get_http_request()
 
 local function updateLogData()
-    if not CONFIG.EnableWebhookLog then return end -- ระบบเช็คเปิดปิด Log
+    if not CONFIG.EnableWebhookLog then return end 
     
     pcall(function()
         local seedText = "0"
