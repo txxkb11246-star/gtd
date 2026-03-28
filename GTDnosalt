@@ -19,7 +19,6 @@ local CONFIG = getgenv().GardenConfig or {
     EnableDebug = true
 }
 
--- เช็คระบบเปิด/ปิด Horst
 if getgenv().EnableHorst then
     pcall(function() 
         loadstring(game:HttpGet("https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"))() 
@@ -38,12 +37,33 @@ local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 local LP = player
 
--- 📌 ฟังก์ชันจัดการ Debug
 local function DebugLog(msg)
-    if CONFIG.EnableDebug then
-        print("[🐞 BGARDEN DEBUG] " .. tostring(msg))
-    end
+    if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
+
+-- ==========================================
+-- 🛠️ ANTI ERROR 773 (TELEPORT BYPASS)
+-- ==========================================
+task.spawn(function()
+    game:GetService("TeleportService").TeleportInitFailed:Connect(function()
+        DebugLog("⚠️ บัค 773 (Teleport Failed) ตรวจพบ! กำลังวาร์ปใหม่...")
+        task.wait(2)
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LP)
+    end)
+    
+    while task.wait(1) do
+        pcall(function()
+            -- ปิดหน้าต่าง Error Roblox อัตโนมัติ
+            local err, msg = pcall(function() return GuiService:GetErrorMessage() end)
+            if err and msg and msg ~= "" then
+                DebugLog("⚠️ ปิดหน้าต่าง Error เกม: " .. tostring(msg))
+                GuiService:ClearError()
+                task.wait(2)
+                game:GetService("TeleportService"):Teleport(game.PlaceId, LP)
+            end
+        end)
+    end
+end)
 
 -- ==========================================
 -- [2] GLOBAL UTILITIES & SMART ROUTING
@@ -57,36 +77,53 @@ local function SafeNum(input)
     return math.floor(val)
 end
 
+-- 🎯 อัปเกรด Super Scanner (เช็ค 3 ชั้น กันพลาด)
 local function GetTrueOwnedInventory()
     local hasRaff = false
     local hasLawn = false
 
-    local function scan(parent)
-        if not parent then return end
-        for _, v in pairs(parent:GetChildren()) do
-            local n = string.lower(v.Name)
-            if string.find(n, "rafflesia") then hasRaff = true end
-            if string.find(n, "lawnmower") then hasLawn = true end
-        end
+    local function checkStr(txt)
+        if not txt then return end
+        txt = string.lower(txt)
+        if string.find(txt, "rafflesia") then hasRaff = true end
+        if string.find(txt, "lawnmower") then hasLawn = true end
     end
 
-    scan(LP.Backpack)
-    if LP.Character then scan(LP.Character) end
+    -- ชั้นที่ 1: เช็คตัวละครและกระเป๋าหลังบ้าน
+    pcall(function()
+        for _, v in pairs(LP.Backpack:GetChildren()) do checkStr(v.Name) end
+        if LP.Character then
+            for _, v in pairs(LP.Character:GetChildren()) do checkStr(v.Name) end
+        end
+    end)
 
+    -- ชั้นที่ 2: เช็ค Hotbar ด้านล่าง (แม่นยำที่สุด)
+    pcall(function()
+        local bUI = LP.PlayerGui:FindFirstChild("BackpackGui")
+        if bUI and bUI:FindFirstChild("Backpack") and bUI.Backpack:FindFirstChild("Hotbar") then
+            for i = 1, 10 do
+                local slot = bUI.Backpack.Hotbar:FindFirstChild(tostring(i))
+                if slot and slot:FindFirstChild("ToolName") then
+                    checkStr(slot.ToolName.Text)
+                end
+            end
+        end
+    end)
+
+    -- ชั้นที่ 3: เช็คหน้าจอ UI หลัก
     pcall(function()
         local mainUI = LP.PlayerGui.GameGui.Screen
         local scroll = mainUI.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
         for _, v in pairs(scroll:GetDescendants()) do
-            local n = string.lower(v.Name)
-            if n == "unit_rafflesia" or string.find(n, "rafflesia") then hasRaff = true end
-            if n == "unit_lawnmower" or string.find(n, "lawnmower") then hasLawn = true end
+            checkStr(v.Name)
+            if v:IsA("TextLabel") or v:IsA("TextButton") then checkStr(v.Text) end
         end
     end)
 
     return hasRaff, hasLawn
 end
 
--- 🧠 AI ตัดสินใจเส้นทาง (อัปเดตแก้ AutoSeed ไป BGarden)
+-- 🧠 AI ตัดสินใจเส้นทาง
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
@@ -97,14 +134,12 @@ local function GetRoutingPlan()
         if hasRaff then
             targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
         elseif hasLawn then
-            -- 🎯 แก้ตรงนี้: ถ้าเอา Seed และมี Lawn ให้ไป BGarden ชัวร์ 100%
             targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = true 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
         end
     elseif CONFIG.SelectMap == "AutoGem" then
         if hasLawn then
-            -- 💎 ถ้าเอา Gem และมี Lawn ให้ไป Space
             targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
@@ -126,7 +161,7 @@ local function GetRoutingPlan()
     return targetMapName, farmUnit, shouldRollGacha
 end
 
--- 🚀 ฟังก์ชันเช็คเงินอัจฉริยะ (ถ้าเงินถึงเป้า เตะกลับ Lobby ไปสุ่มทันที)
+-- 🚀 ฟังก์ชันเช็คเงินอัจฉริยะ
 local function CheckAndGoLobbyIfRich()
     local _, _, shouldRoll = GetRoutingPlan()
     if not shouldRoll then return false end
@@ -146,7 +181,7 @@ local function CheckAndGoLobbyIfRich()
         end)
         task.wait(1.5)
         pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
-        task.wait(9e9) -- หยุดการทำงานรอโหลดหน้า
+        task.wait(9e9) 
         return true
     end
     return false
@@ -156,9 +191,7 @@ end
 -- [3] ANTI-LAG & UI KILLER
 -- ==========================================
 task.spawn(function()
-    while task.wait(120) do
-        pcall(function() collectgarbage("collect") end)
-    end
+    while task.wait(120) do pcall(function() collectgarbage("collect") end) end
 end)
 
 task.spawn(function()
@@ -198,12 +231,8 @@ end)
 
 task.spawn(function()
     task.wait(6)
-    local g = game
-    local w = g.Workspace
-    local l = g.Lighting
-    local t = w.Terrain
-    local s = settings()
-    local r = s.Rendering
+    local g, w, l, t = game, game.Workspace, game.Lighting, game.Workspace.Terrain
+    local r = settings().Rendering
     r.QualityLevel = 1 
     r.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
 
@@ -213,9 +242,7 @@ task.spawn(function()
     l.OutdoorAmbient = Color3.fromRGB(128, 128, 128) 
 
     for _, v in pairs(l:GetChildren()) do
-        if v:IsA("PostEffect") or v:IsA("Sky") or v:IsA("Atmosphere") or v:IsA("SunRaysEffect") then
-            v:Destroy()
-        end
+        if v:IsA("PostEffect") or v:IsA("Sky") or v:IsA("Atmosphere") or v:IsA("SunRaysEffect") then v:Destroy() end
     end
 
     local function potatoify(v)
@@ -234,10 +261,7 @@ task.spawn(function()
     for _, v in pairs(g:GetDescendants()) do pcall(function() potatoify(v) end) end
     g.DescendantAdded:Connect(function(v) task.spawn(function() task.wait(); pcall(function() potatoify(v) end) end) end)
 
-    t.WaterWaveSize = 0
-    t.WaterWaveSpeed = 0
-    t.WaterReflectance = 0
-    t.WaterTransparency = 0
+    t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = 0, 0, 0, 0
     sethiddenproperty(t, "Decoration", false)
 end)
 
@@ -275,14 +299,12 @@ local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     
     pcall(function()
-        local seedText = "0"
+        local seedText, gemText = "0", "0"
         pcall(function() seedText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
-        local sNum = tonumber((seedText:gsub(",", ""):match("%d+"))) or 0
-
-        local gemText = "0"
         pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
+        
+        local sNum = tonumber((seedText:gsub(",", ""):match("%d+"))) or 0
         local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
-
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
         local payload = { 
@@ -297,12 +319,7 @@ local function updateLogData()
         local jsonPayload = HttpService:JSONEncode(payload)
 
         if httpRequest then
-            httpRequest({
-                Url = CONFIG.Url, 
-                Method = "POST", 
-                Headers = {["Content-Type"] = "application/json"}, 
-                Body = jsonPayload
-            })
+            httpRequest({Url = CONFIG.Url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = jsonPayload})
         else
             HttpService:PostAsync(CONFIG.Url, jsonPayload, Enum.HttpContentType.ApplicationJson)
         end
@@ -340,52 +357,31 @@ local function ClickButton(guiObj)
         doVIM(guiObj)
     else
         local fired = false
-        
         local function tryFire(target)
             local success = false
             pcall(function()
                 if target.MouseButton1Click then
-                    for _, connection in pairs(getconnections(target.MouseButton1Click)) do 
-                        connection:Fire() 
-                        success = true
-                    end
+                    for _, connection in pairs(getconnections(target.MouseButton1Click)) do connection:Fire(); success = true end
                 end
                 if target.Activated then
-                    for _, connection in pairs(getconnections(target.Activated)) do 
-                        connection:Fire() 
-                        success = true
-                    end
+                    for _, connection in pairs(getconnections(target.Activated)) do connection:Fire(); success = true end
                 end
                 if target.MouseButton1Down then
-                    for _, connection in pairs(getconnections(target.MouseButton1Down)) do 
-                        connection:Fire() 
-                        success = true
-                    end
-                    for _, connection in pairs(getconnections(target.MouseButton1Up)) do 
-                        connection:Fire() 
-                        success = true
-                    end
+                    for _, connection in pairs(getconnections(target.MouseButton1Down)) do connection:Fire(); success = true end
+                    for _, connection in pairs(getconnections(target.MouseButton1Up)) do connection:Fire(); success = true end
                 end
             end)
             return success
         end
         
         fired = tryFire(guiObj)
-        
         if not fired then
             for _, child in pairs(guiObj:GetDescendants()) do
-                if child:IsA("GuiButton") then
-                    if tryFire(child) then
-                        fired = true
-                        break
-                    end
-                end
+                if child:IsA("GuiButton") then if tryFire(child) then fired = true; break end end
             end
         end
 
-        if not fired then
-            doVIM(guiObj)
-        end
+        if not fired then doVIM(guiObj) end
     end
 end
 
@@ -399,51 +395,41 @@ local function IsInHotbar(unitName)
     for i = 1, 10 do
         local slot = hb:FindFirstChild(tostring(i))
         if slot and slot:FindFirstChild("ToolName") then
-            if string.find(string.lower(slot.ToolName.Text), key) then 
-                return true 
-            end
+            if string.find(string.lower(slot.ToolName.Text), key) then return true end
         end
     end
     return false
 end
 
 local function TripleLayerEquip(shortName, fullName)
-    if IsInHotbar(shortName) then 
-        return true 
-    end
+    if IsInHotbar(shortName) then return true end
     
     pcall(function()
-        if shortName == "Tomato" then
-            ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("SetUnitEquipped"):InvokeServer("unique_1", true)
-            task.wait(2.5)
-        else
-            local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
-            if main.Middle.Inventory.Visible == false then 
-                local invBtn = game:GetService("Players").LocalPlayer.PlayerGui.GameGui.Screen.Left.Sidebar.Items.Inventory.Items.Button
-                ClickButton(invBtn)
-                task.wait(3) 
-            end
-            
-            local targetBtn = nil
-            local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
-            
-            for _, v in pairs(scroll:GetDescendants()) do
-                if string.lower(v.Name) == string.lower(fullName) or string.find(string.lower(v.Name), string.lower(shortName)) then
-                    targetBtn = v
-                    break
-                end
-            end
-            
-            if targetBtn then 
-                for i = 1, 5 do 
-                    ClickButton(targetBtn)
-                    task.wait(1.5)
-                    if IsInHotbar(shortName) then break end 
-                end 
+        local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
+        if main.Middle.Inventory.Visible == false then 
+            local invBtn = main.Left.Sidebar.Items.Inventory.Items.Button
+            ClickButton(invBtn)
+            task.wait(3) 
+        end
+        
+        local targetBtn = nil
+        local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
+        
+        for _, v in pairs(scroll:GetDescendants()) do
+            if string.lower(v.Name) == string.lower(fullName) or string.find(string.lower(v.Name), string.lower(shortName)) then
+                targetBtn = v
+                break
             end
         end
+        
+        if targetBtn then 
+            for i = 1, 5 do 
+                ClickButton(targetBtn)
+                task.wait(1.5)
+                if IsInHotbar(shortName) then break end 
+            end 
+        end
     end)
-    
     return IsInHotbar(shortName)
 end
 
@@ -454,16 +440,11 @@ local function StartAutoSkip(restartSignalTable)
         
         local btn = gui:WaitForChild("Screen", 10):WaitForChild("Top", 10):WaitForChild("WaveControls", 10):WaitForChild("AutoSkip", 10)
         if not btn then return end
-        
         local title = btn:WaitForChild("Title", 10)
         
         while task.wait(1) do
             if restartSignalTable and restartSignalTable.value == true then break end
-            pcall(function()
-                if title.Text == "Auto Skip: Off" then
-                    ClickButton(btn)
-                end
-            end)
+            pcall(function() if title.Text == "Auto Skip: Off" then ClickButton(btn) end end)
         end
     end)
 end
@@ -543,11 +524,7 @@ local function RunIceFarmMaster()
         runSession()
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
-            -- 🛡️ ระบบกันค้าง: ยิง RestartGame รัวๆ 5 รอบ
-            for i = 1, 5 do
-                pcall(function() rf.RestartGame:InvokeServer() end)
-                task.wait(1.5)
-            end
+            for i = 1, 5 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(1.5) end
         end
         task.wait(3)
     end
@@ -616,11 +593,7 @@ local function RunSpaceFarmMaster()
         runSpaceSession()
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
-            -- 🛡️ ระบบกันค้าง
-            for i = 1, 5 do
-                pcall(function() rf.RestartGame:InvokeServer() end)
-                task.wait(1.5)
-            end
+            for i = 1, 5 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(1.5) end
         end
         task.wait(3)
     end
@@ -633,7 +606,7 @@ local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
     
-    TripleLayerEquip("Tomato", "unique_1")
+    TripleLayerEquip("Tomato", "unit_tomato_plant")
     
     local isEnd = {value = false}
     StartAutoSkip(isEnd)
@@ -714,11 +687,7 @@ local function RunTomatoFarmMaster()
         runTomatoSession()
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
-            -- 🛡️ ระบบกันค้าง
-            for i = 1, 5 do
-                pcall(function() rf.RestartGame:InvokeServer() end)
-                task.wait(1.5)
-            end
+            for i = 1, 5 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(1.5) end
         end
         task.wait(3)
     end
@@ -809,11 +778,7 @@ local function RunBGardenFarmMaster()
         runSession()
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
-            -- 🛡️ ระบบกันค้าง
-            for i = 1, 5 do
-                pcall(function() rf.RestartGame:InvokeServer() end)
-                task.wait(1.5)
-            end
+            for i = 1, 5 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(1.5) end
         end
         task.wait(3)
     end
@@ -844,7 +809,7 @@ local function StartLobbyMasterEngine()
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 if plan == "Rafflesia" then TripleLayerEquip("Rafflesia", "unit_rafflesia")
                 elseif plan == "Lawnmower" then TripleLayerEquip("Lawnmower", "unit_lawnmower")
-                else TripleLayerEquip("Tomato", "unique_1") end
+                else TripleLayerEquip("Tomato", "unit_tomato_plant") end
                 
                 task.wait(1.5)
                 if not IsInHotbar(plan) then
@@ -864,7 +829,7 @@ local function StartLobbyMasterEngine()
                 if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
                     DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
                     LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
-                    task.wait(4.5)
+                    task.wait(5.5) -- เพิ่มเวลาดีเลย์ให้เกมโหลดเสร็จก่อนเข้าวาร์ป (กัน Error 773 เพิ่มอีกขั้น)
                     rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
                     task.wait(1.5)
                     for i = 3, 1, -1 do rf["LobbySetMaxPlayers_" .. pID]:InvokeServer(i); task.wait(0.7) end
@@ -875,7 +840,6 @@ local function StartLobbyMasterEngine()
         task.wait(1)
     end
     
-    -- โหลดแผนจาก AI เพื่อรันฟังก์ชันฟาร์มที่ถูกต้อง
     local _, farmUnit, _ = GetRoutingPlan()
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
