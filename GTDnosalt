@@ -76,7 +76,6 @@ local function SafeNum(input)
     return math.floor(val)
 end
 
--- 🎯 อัปเกรด Super Scanner ให้หา Lawn เจอชัวร์ๆ
 local function GetTrueOwnedInventory()
     local hasRaff = false
     local hasLawn = false
@@ -129,7 +128,7 @@ local function GetRoutingPlan()
         if hasRaff then
             targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
         elseif hasLawn then
-            targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = true 
+            targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
         end
@@ -395,11 +394,9 @@ local function IsInHotbar(unitName)
     return false
 end
 
--- 🛠️ อัปเดต: ระบบ Remote ยิงหลังบ้านสำหรับสวมใส่ตัวละคร (Tomato = unique_1)
 local function TripleLayerEquip(shortName, fullName)
     if IsInHotbar(shortName) then return true end
     
-    -- [STEP 1] ใช้พลัง Remote ยิงตรงเข้าหลังบ้าน (แรงสุด ทะลุหมด)
     pcall(function()
         local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
         if rf and rf:FindFirstChild("SetUnitEquipped") then
@@ -419,7 +416,6 @@ local function TripleLayerEquip(shortName, fullName)
         return true 
     end
     
-    -- [STEP 2] ถ้า Remote โดนบล็อก ให้ใช้ UI คลิกแทน (เผื่อเหนียว)
     pcall(function()
         local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
         if main.Middle.Inventory.Visible == false then 
@@ -432,7 +428,6 @@ local function TripleLayerEquip(shortName, fullName)
         local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
         local searchName = string.lower(fullName)
         
-        -- แก้บัคค้นหา Tomato ในกระเป๋า
         if shortName == "Tomato" then searchName = "unique_1" end
         
         for _, v in pairs(scroll:GetDescendants()) do
@@ -813,19 +808,17 @@ local function StartLobbyMasterEngine()
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
-            -- 🛠️ อัปเดต: บังคับเปิดกระเป๋าเพื่อโหลดข้อมูลไอเทมก่อนให้ AI ทำงาน
             local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
             if mainUI.Middle.Inventory.Visible == false then 
                 local invBtn = mainUI.Left.Sidebar.Items.Inventory.Items.Button
                 ClickButton(invBtn)
-                task.wait(2) -- รอ 2 วิให้ UI อัปเดตไอเทมว่าเรามี Lawn จริงๆ
+                task.wait(2) 
             end
 
             local seedsText = "0"
             pcall(function() seedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
             local seedsAmount = SafeNum(seedsText)
             
-            -- โหลดแผนจาก AI (ตอนนี้กระเป๋าเปิดแล้ว จะไม่พลาด Lawn แน่นอน)
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
             if not IsInHotbar(plan) then
@@ -882,13 +875,18 @@ local function isInLobby()
 end
 
 -- ==========================================
--- [11] SYSTEM BOOTSTRAP
+-- [11] SYSTEM BOOTSTRAP (✨ อัปเดตแก้บัคใจร้อน)
 -- ==========================================
+
+DebugLog("⏳ [SYSTEM] รอให้เซิร์ฟเวอร์ยัดข้อมูลใส่กระเป๋า (6 วินาที)...")
+task.wait(6) -- 🛑 สั่งเบรก 6 วินาทีเต็มๆ รอให้ UI และกระเป๋าในเกมโหลดจนเสร็จสมบูรณ์ก่อน
+
 if isInLobby() then 
     StartLobbyMasterEngine() 
 else 
     local _, farmUnit, _ = GetRoutingPlan()
-    DebugLog("🎮 [FARM] สแกนตัวละครที่ใช้ฟาร์มเสร็จสิ้น: ตัดสินใจเล่นโหมด " .. farmUnit)
+    DebugLog("🎮 [FARM] สแกนกระเป๋าเสร็จสิ้น: AI ตัดสินใจเล่นโหมด " .. farmUnit)
+    
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
         if CONFIG.SelectMap == "BGarden" or CONFIG.SelectMap == "AutoSeed" then 
