@@ -181,7 +181,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [3] ANTI-LAG & UI KILLER
+-- [3] ANTI-LAG & UI KILLER (✨ อัปเดตซ่อนจอ GameEnd)
 -- ==========================================
 task.spawn(function()
     while task.wait(120) do pcall(function() collectgarbage("collect") end) end
@@ -218,6 +218,22 @@ task.spawn(function()
             huntAndDestroy(player:FindFirstChild("PlayerGui"))
             huntAndDestroy(game:GetService("CoreGui"))
             if gethui then huntAndDestroy(gethui()) end
+            
+            -- 🛡️ [NEW] ลบหน้าจอ Game End ที่ค้างข้ามรอบทิ้งซะ!
+            local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
+            if gameGui and gameGui:FindFirstChild("Screen") then
+                local gameEnd = gameGui.Screen:FindFirstChild("GameEnd")
+                if gameEnd then
+                    gameEnd.Visible = false
+                    gameEnd.Position = UDim2.new(100, 0, 100, 0) -- เตะออกนอกจอไปเลย
+                end
+                
+                -- เผื่อหน้า LevelUp ค้างด้วย
+                local levelUp = gameGui.Screen:FindFirstChild("LevelUp")
+                if levelUp then
+                    levelUp.Visible = false
+                end
+            end
         end)
     end
 end)
@@ -875,11 +891,10 @@ local function isInLobby()
 end
 
 -- ==========================================
--- [11] SYSTEM BOOTSTRAP (✨ อัปเดตแก้บัคใจร้อน)
+-- [11] SYSTEM BOOTSTRAP
 -- ==========================================
-
 DebugLog("⏳ [SYSTEM] รอให้เซิร์ฟเวอร์ยัดข้อมูลใส่กระเป๋า (6 วินาที)...")
-task.wait(6) -- 🛑 สั่งเบรก 6 วินาทีเต็มๆ รอให้ UI และกระเป๋าในเกมโหลดจนเสร็จสมบูรณ์ก่อน
+task.wait(6)
 
 if isInLobby() then 
     StartLobbyMasterEngine() 
