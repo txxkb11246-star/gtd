@@ -6,7 +6,7 @@ end
 getgenv().FarmRockbottomActive = true
 
 -- ==========================================
--- [1] MASTER CONFIGURATION (ดึงจาก getgenv())
+-- [1] MASTER CONFIGURATION
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "Unknown", 
@@ -53,7 +53,6 @@ task.spawn(function()
     
     while task.wait(1) do
         pcall(function()
-            -- ปิดหน้าต่าง Error Roblox อัตโนมัติ
             local err, msg = pcall(function() return GuiService:GetErrorMessage() end)
             if err and msg and msg ~= "" then
                 DebugLog("⚠️ ปิดหน้าต่าง Error เกม: " .. tostring(msg))
@@ -77,7 +76,7 @@ local function SafeNum(input)
     return math.floor(val)
 end
 
--- 🎯 อัปเกรด Super Scanner (เช็ค 3 ชั้น กันพลาด)
+-- 🎯 อัปเกรด Super Scanner ให้หา Lawn เจอชัวร์ๆ
 local function GetTrueOwnedInventory()
     local hasRaff = false
     local hasLawn = false
@@ -85,11 +84,10 @@ local function GetTrueOwnedInventory()
     local function checkStr(txt)
         if not txt then return end
         txt = string.lower(txt)
-        if string.find(txt, "rafflesia") then hasRaff = true end
-        if string.find(txt, "lawnmower") then hasLawn = true end
+        if string.find(txt, "raff") then hasRaff = true end
+        if string.find(txt, "lawn") then hasLawn = true end
     end
 
-    -- ชั้นที่ 1: เช็คตัวละครและกระเป๋าหลังบ้าน
     pcall(function()
         for _, v in pairs(LP.Backpack:GetChildren()) do checkStr(v.Name) end
         if LP.Character then
@@ -97,7 +95,6 @@ local function GetTrueOwnedInventory()
         end
     end)
 
-    -- ชั้นที่ 2: เช็ค Hotbar ด้านล่าง (แม่นยำที่สุด)
     pcall(function()
         local bUI = LP.PlayerGui:FindFirstChild("BackpackGui")
         if bUI and bUI:FindFirstChild("Backpack") and bUI.Backpack:FindFirstChild("Hotbar") then
@@ -110,7 +107,6 @@ local function GetTrueOwnedInventory()
         end
     end)
 
-    -- ชั้นที่ 3: เช็คหน้าจอ UI หลัก
     pcall(function()
         local mainUI = LP.PlayerGui.GameGui.Screen
         local scroll = mainUI.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
@@ -123,7 +119,6 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
--- 🧠 AI ตัดสินใจเส้นทาง
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
@@ -161,7 +156,6 @@ local function GetRoutingPlan()
     return targetMapName, farmUnit, shouldRollGacha
 end
 
--- 🚀 ฟังก์ชันเช็คเงินอัจฉริยะ
 local function CheckAndGoLobbyIfRich()
     local _, _, shouldRoll = GetRoutingPlan()
     if not shouldRoll then return false end
@@ -401,9 +395,31 @@ local function IsInHotbar(unitName)
     return false
 end
 
+-- 🛠️ อัปเดต: ระบบ Remote ยิงหลังบ้านสำหรับสวมใส่ตัวละคร (Tomato = unique_1)
 local function TripleLayerEquip(shortName, fullName)
     if IsInHotbar(shortName) then return true end
     
+    -- [STEP 1] ใช้พลัง Remote ยิงตรงเข้าหลังบ้าน (แรงสุด ทะลุหมด)
+    pcall(function()
+        local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
+        if rf and rf:FindFirstChild("SetUnitEquipped") then
+            if shortName == "Tomato" then
+                rf.SetUnitEquipped:InvokeServer("unique_1", true)
+            elseif shortName == "Lawnmower" then
+                rf.SetUnitEquipped:InvokeServer("unit_lawnmower", true)
+            elseif shortName == "Rafflesia" then
+                rf.SetUnitEquipped:InvokeServer("unit_rafflesia", true)
+            end
+        end
+    end)
+
+    task.wait(1.5)
+    if IsInHotbar(shortName) then 
+        DebugLog("✅ [EQUIP] สวมใส่ " .. shortName .. " ด้วย Remote สำเร็จ!")
+        return true 
+    end
+    
+    -- [STEP 2] ถ้า Remote โดนบล็อก ให้ใช้ UI คลิกแทน (เผื่อเหนียว)
     pcall(function()
         local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
         if main.Middle.Inventory.Visible == false then 
@@ -414,9 +430,14 @@ local function TripleLayerEquip(shortName, fullName)
         
         local targetBtn = nil
         local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
+        local searchName = string.lower(fullName)
+        
+        -- แก้บัคค้นหา Tomato ในกระเป๋า
+        if shortName == "Tomato" then searchName = "unique_1" end
         
         for _, v in pairs(scroll:GetDescendants()) do
-            if string.lower(v.Name) == string.lower(fullName) or string.find(string.lower(v.Name), string.lower(shortName)) then
+            local vName = string.lower(v.Name)
+            if vName == searchName or string.find(vName, string.lower(shortName)) then
                 targetBtn = v
                 break
             end
@@ -606,7 +627,7 @@ local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
     
-    TripleLayerEquip("Tomato", "unit_tomato_plant")
+    TripleLayerEquip("Tomato", "unique_1")
     
     local isEnd = {value = false}
     StartAutoSkip(isEnd)
@@ -792,24 +813,26 @@ local function StartLobbyMasterEngine()
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
+            -- 🛠️ อัปเดต: บังคับเปิดกระเป๋าเพื่อโหลดข้อมูลไอเทมก่อนให้ AI ทำงาน
             local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
             if mainUI.Middle.Inventory.Visible == false then 
                 local invBtn = mainUI.Left.Sidebar.Items.Inventory.Items.Button
-                ClickButton(invBtn); task.wait(2)
+                ClickButton(invBtn)
+                task.wait(2) -- รอ 2 วิให้ UI อัปเดตไอเทมว่าเรามี Lawn จริงๆ
             end
 
             local seedsText = "0"
             pcall(function() seedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
             local seedsAmount = SafeNum(seedsText)
             
-            -- โหลดแผนจาก AI (Auto Routing)
+            -- โหลดแผนจาก AI (ตอนนี้กระเป๋าเปิดแล้ว จะไม่พลาด Lawn แน่นอน)
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 if plan == "Rafflesia" then TripleLayerEquip("Rafflesia", "unit_rafflesia")
                 elseif plan == "Lawnmower" then TripleLayerEquip("Lawnmower", "unit_lawnmower")
-                else TripleLayerEquip("Tomato", "unit_tomato_plant") end
+                else TripleLayerEquip("Tomato", "unique_1") end
                 
                 task.wait(1.5)
                 if not IsInHotbar(plan) then
@@ -829,7 +852,7 @@ local function StartLobbyMasterEngine()
                 if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
                     DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
                     LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
-                    task.wait(5.5) -- เพิ่มเวลาดีเลย์ให้เกมโหลดเสร็จก่อนเข้าวาร์ป (กัน Error 773 เพิ่มอีกขั้น)
+                    task.wait(5.5) 
                     rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
                     task.wait(1.5)
                     for i = 3, 1, -1 do rf["LobbySetMaxPlayers_" .. pID]:InvokeServer(i); task.wait(0.7) end
