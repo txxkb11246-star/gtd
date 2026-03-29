@@ -10,9 +10,9 @@ getgenv().FarmRockbottomActive = true
 -- [1] MASTER CONFIGURATION
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
-    DeviceName = "Unknown", 
+    DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120, 
+    Interval = 120, -- ⏳ ทำหน้าที่เป็น Force Update ทุก 120 วินาที
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
@@ -228,14 +228,11 @@ RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
         if gameGui and gameGui:FindFirstChild("Screen") then
-            -- กำจัดหน้าจอจบเกม (GameEnd)
             local gameEnd = gameGui.Screen:FindFirstChild("GameEnd")
             if gameEnd and gameEnd.Visible then
                 gameEnd.Visible = false
                 gameEnd.Position = UDim2.new(100, 0, 100, 0)
             end
-            
-            -- กำจัดหน้าจอเลเวลอัป (LevelUp)
             local levelUp = gameGui.Screen:FindFirstChild("LevelUp")
             if levelUp and levelUp.Visible then
                 levelUp.Visible = false
@@ -282,7 +279,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [4] AFK & WEBHOOK LOG
+-- [4] AFK & WEBHOOK LOG (🚀 NGROK BYPASS VERSION)
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -310,11 +307,12 @@ local function get_http_request()
 end
 
 local httpRequest = get_http_request()
+local lastS, lastG, lastT = 0, 0, tick()
 
 local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     
-    pcall(function()
+    local success, err = pcall(function()
         local seedText, gemText = "0", "0"
         pcall(function() seedText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
         pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
@@ -323,30 +321,58 @@ local function updateLogData()
         local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-        local payload = { 
-            device = CONFIG.DeviceName, 
-            username = LP.Name, 
-            seed = sNum, 
-            gems = gemsAmount, 
-            raff = hasRaff, 
-            lawn = hasLawn, 
-            game = CONFIG.GameName 
-        }
-        local jsonPayload = HttpService:JSONEncode(payload)
+        -- 🛡️ ระบบส่งข้อมูลอัจฉริยะ (ส่งเมื่อเงินเพิ่ม หรือ ครบเวลา Force Update)
+        if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
+            local payload = { 
+                device = CONFIG.DeviceName, 
+                username = LP.Name, 
+                seed = sNum, 
+                gems = gemsAmount, 
+                raff = hasRaff, 
+                lawn = hasLawn, 
+                game = CONFIG.GameName 
+            }
+            local jsonPayload = HttpService:JSONEncode(payload)
+            
+            -- 🔴 รหัสผ่านลับสำหรับทะลวง Ngrok Warning Page
+            local headers = {
+                ["Content-Type"] = "application/json",
+                ["ngrok-skip-browser-warning"] = "true" 
+            }
 
-        if httpRequest then
-            httpRequest({Url = CONFIG.Url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = jsonPayload})
-        else
-            HttpService:PostAsync(CONFIG.Url, jsonPayload, Enum.HttpContentType.ApplicationJson)
+            if httpRequest then
+                httpRequest({
+                    Url = CONFIG.Url, 
+                    Method = "POST", 
+                    Headers = headers, 
+                    Body = jsonPayload
+                })
+            else
+                -- Fallback สำหรับบาง Executor
+                HttpService:PostAsync(
+                    CONFIG.Url, 
+                    jsonPayload, 
+                    Enum.HttpContentType.ApplicationJson,
+                    false,
+                    {["ngrok-skip-browser-warning"] = "true"}
+                )
+            end
+            
+            lastS, lastG, lastT = sNum, gemsAmount, tick()
+            DebugLog("⚡ [NOSALT] ทะลวง Ngrok สำเร็จ! ส่งข้อมูลแล้ว -> Seed: " .. tostring(sNum))
         end
     end)
+    
+    if not success then
+        DebugLog("❌ [ERROR] ส่งข้อมูลไม่สำเร็จ: " .. tostring(err))
+    end
 end
 
 task.spawn(function()
-    DebugLog("System Started with ClickMode: " .. CONFIG.ClickMode)
+    DebugLog("🚀 System Started (Ngrok Bypass Mode)")
     while true do 
         task.spawn(updateLogData)
-        task.wait(CONFIG.Interval) 
+        task.wait(1) -- สแกนเช็คหน้าจอทุกๆ 1 วินาที
     end
 end)
 
@@ -775,7 +801,7 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.5 ล้วน (อัปเดตเป็น 1.5 ตามที่ขอ!)
+        -- 📌 ระยะสุ่ม 1.5 ล้วน (ป้องกันการทับกันตอน Spam รัวๆ)
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
