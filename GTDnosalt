@@ -1,3 +1,4 @@
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (ICE SYSTEM CORE + DEBUGGER - NO UI KILLER) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -181,7 +182,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [3] ANTI-LAG & SUPER UI KILLER (✨ อัปเดตลบ GameEnd ทุกเฟรม!)
+-- [3] ANTI-LAG & SUPER UI KILLER
 -- ==========================================
 task.spawn(function()
     while task.wait(120) do pcall(function() collectgarbage("collect") end) end
@@ -222,7 +223,7 @@ task.spawn(function()
     end
 end)
 
--- 🛑 [NEW] ระบบลบ UI บัคระดับ Frame-by-Frame! วิ่งทำงานรัวๆ ไม่มีพลาด!
+-- 🛑 ระบบลบ UI บัคระดับ Frame-by-Frame! วิ่งทำงานรัวๆ ไม่มีพลาด!
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
@@ -732,26 +733,21 @@ local function RunTomatoFarmMaster()
 end
 
 -- ==========================================
--- [9] BGARDEN FARM ENGINE
+-- [9] BGARDEN FARM ENGINE (UPDATED: SPAM 30x)
 -- ==========================================
 local function RunBGardenFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
     
     TripleLayerEquip("Lawnmower", "unit_lawnmower")
-
-    local DATA = {
-        LAW1 = { pos = Vector3.new(-853.172, 62.180, -123.052), dist = 238.708, cf = CFrame.new(-853.172, 62.180, -123.052, 0, 0, 1, 0, 1, 0, -1, 0, 0) },
-        LAW2 = { pos = Vector3.new(-853.172, 62.180, -123.052), dist = 238.708, cf = CFrame.new(-853.172, 62.180, -123.052, 0, 0, 1, 0, 1, 0, -1, 0, 0) },
-        LAW3 = { pos = Vector3.new(-857.380, 62.180, -118.508), dist = 218.542, cf = CFrame.new(-857.380, 62.180, -118.508, 1, 0, 0, 0, 1, 0, 0, 0, 1) },
-        LAW4 = { pos = Vector3.new(-907.380, 62.180, -105.011), dist = 314.290, cf = CFrame.new(-907.380, 62.180, -105.011, 1, 0, 0, 0, 0.999, -0.007, 0, 0.007, 0.999) },
-        LAW5 = { pos = Vector3.new(-907.380, 62.180, -106.741), dist = 312.561, cf = CFrame.new(-907.380, 62.180, -106.741, 1, 0, 0, 0, 1, 0, 0, 0, 1) },
-        LAW6 = { pos = Vector3.new(-842.381, 62.180, -154.328), dist = 188.222, cf = CFrame.new(-842.381, 62.180, -154.328, 1, 0, 0, 0, 1, 0, 0, 0, 1) },
-        LAW7 = { pos = Vector3.new(-857.380, 62.180, -132.547), dist = 225.004, cf = CFrame.new(-857.380, 62.180, -132.547, 1, 0, 0, 0, 1, 0, 0, 0, 1) },
-        LAW8 = { pos = Vector3.new(-886.711, 62.180, -123.052), dist = 275.580, cf = CFrame.new(-886.711, 62.180, -123.052, 0, 0, -1, 0, 1, 0, 1, 0, 0) },
-        LAW9 = { pos = Vector3.new(-907.380, 62.180, -107.588), dist = 311.713, cf = CFrame.new(-907.380, 62.180, -107.588, 1, 0, 0, 0, 1, 0, 0, 0, 1) }
-    }
     
+    local DATA = {
+        LAW1 = { pos = Vector3.new(-848.9949340820312, 62.18030548095703, -123.05203247070312), dist = 242.88543701171875, cf = CFrame.new(-848.9949340820312, 62.18030548095703, -123.05203247070312, -0, 0, 1, 0, 1, -0, -1, 0, -0) },
+        LAW2 = { pos = Vector3.new(-868.8399658203125, 62.18030548095703, -123.05203247070312), dist = 257.7090129852295, cf = CFrame.new(-868.8399658203125, 62.18030548095703, -123.05203247070312, -0, -0, -1, -0, 1, -0, 1, 0, -0) },
+        LAW3 = { pos = Vector3.new(-857.3809814453125, 62.18030548095703, -115.67050170898438), dist = 221.38092041015625, cf = CFrame.new(-857.3809814453125, 62.18030548095703, -115.67050170898438, 1, 0, -0, -0, 1, -0, -0, 0, 1) },
+        LAW4 = { pos = Vector3.new(-907.3809814453125, 62.18030548095703, -108.17182922363281), dist = 311.1302318572998, cf = CFrame.new(-907.3809814453125, 62.18030548095703, -108.17182922363281, 1, 0, -0, -0, 1, -0, -0, 0, 1) }
+    }
+
     local isEnd = {value = false}
 
     re.ShowGameEnd.OnClientEvent:Connect(function() isEnd.value = true end)
@@ -767,53 +763,122 @@ local function RunBGardenFarmMaster()
     end
 
     local function safeWait(seconds)
+        DebugLog("⏳ Waiting for " .. tostring(seconds) .. " seconds...")
         local start = tick()
         while tick() - start < seconds do
-            if isEnd.value then return false end; task.wait(0.2)
+            if isEnd.value then return false end
+            task.wait(0.2)
         end
         return true
     end
 
-    local function deployLawnmower(pathIndex, config)
+    local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
-        local finalPos = config.pos 
-        local finalCF = config.cf
+        
+        -- 📌 ระยะสุ่ม 1.2 ล้วน
+        local offset = 1.2
+        local randomX = (math.random() * (offset * 2)) - offset
+        local randomZ = (math.random() * (offset * 2)) - offset
+
+        local finalPos = Vector3.new(
+            config.pos.X + randomX, 
+            config.pos.Y, 
+            config.pos.Z + randomZ
+        )
+        local finalCF = CFrame.new(finalPos) * (config.cf - config.cf.Position)
+        
+        DebugLog("🚀 Attempting to place " .. tostring(lawName) .. " at PathIndex: " .. tostring(pathIndex))
+
         for i = 1, 3 do
             if isEnd.value then return end
-            local ok = pcall(function() return rf.PlaceUnit:InvokeServer("unit_lawnmower", {Valid=true, PathIndex=pathIndex, Position=finalPos, DistanceAlongPath=config.dist, CF=finalCF, Rotation=180}) end)
-            if ok then break end; task.wait(1)
+            local ok, result = pcall(function() 
+                return rf.PlaceUnit:InvokeServer("unit_lawnmower", {
+                    Valid = true, 
+                    PathIndex = pathIndex, 
+                    Position = finalPos, 
+                    DistanceAlongPath = config.dist, 
+                    CF = finalCF, 
+                    Rotation = 180
+                }) 
+            end)
+
+            if ok then 
+                DebugLog("✅ SUCCESS: " .. tostring(lawName) .. " placed on attempt " .. tostring(i))
+                break 
+            else
+                DebugLog("❌ ERROR: Failed to place " .. tostring(lawName) .. " on attempt " .. tostring(i) .. " | Error: " .. tostring(result))
+            end
+            task.wait(0.5)
         end
     end
 
-    local function runSession()
+    local function runBGardenSession()
         isEnd.value = false
         monitorBaseHP()
         StartAutoSkip(isEnd)
 
         task.spawn(function()
+            DebugLog("⚙️ Applying settings (LowFX, Volume, x2 Speed)")
             pcall(function() rf.ChangeSetting:InvokeServer("st_graphics", 2) end)
+            pcall(function() rf.ChangeSetting:InvokeServer("st_background_music_volume", 1) end)
+            pcall(function() rf.ChangeSetting:InvokeServer("st_fx_volume", 1) end)
             pcall(function() rf.ChangeTickSpeed:InvokeServer(2) end)
         end)
 
         task.wait(2)
-        pcall(function() rf:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_impossible") end)
+        pcall(function() DebugLog("🗳️ Voting for Impossible Mode"); rf:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_impossible") end)
 
         if not isEnd.value then
-            if not safeWait(31) then return end; deployLawnmower(3, DATA.LAW1)
-            if not safeWait(21) then return end; deployLawnmower(3, DATA.LAW2)
-            if not safeWait(14) then return end; deployLawnmower(2, DATA.LAW3)
-            if not safeWait(6)  then return end; deployLawnmower(1, DATA.LAW4)
-            if not safeWait(13) then return end; deployLawnmower(1, DATA.LAW5)
-            if not safeWait(4)  then return end; deployLawnmower(3, DATA.LAW6)
-            if not safeWait(2)  then return end; deployLawnmower(3, DATA.LAW7)
-            if not safeWait(1.5) then return end; deployLawnmower(1, DATA.LAW8)
-            if not safeWait(1.5) then return end; deployLawnmower(1, DATA.LAW9)
+            DebugLog("⏱️ [STEP 1] รอ 30 วินาที เพื่อวางตัวที่ 1")
+            if not safeWait(30) then return end
+            deployLawnmower(3, DATA.LAW1, "LAW1")
+            
+            DebugLog("⏱️ [STEP 2] รอ 19 วินาที เพื่อวางตัวที่ 2")
+            if not safeWait(19) then return end
+            deployLawnmower(1, DATA.LAW2, "LAW2")
+            
+            DebugLog("⏱️ [STEP 3] รอ 14 วินาที เพื่อวางตัวที่ 3")
+            if not safeWait(14) then return end
+            deployLawnmower(2, DATA.LAW3, "LAW3")
+            
+            DebugLog("⏱️ [STEP 4] รอ 13 วินาที เพื่อวางตัวที่ 4 (จุดที่ 1)")
+            if not safeWait(13) then return end
+            deployLawnmower(1, DATA.LAW4, "LAW4_1")
+
+            DebugLog("⏱️ [STEP 4.1] รอ 2.3 วินาที เพื่อวางตัวที่ 4 (จุดที่ 2)")
+            if not safeWait(2.3) then return end
+            deployLawnmower(1, DATA.LAW4, "LAW4_2")
+
+            DebugLog("⏱️ [STEP 4.2] รอ 2.8 วินาที เพื่อวางตัวที่ 4 (จุดที่ 3)")
+            if not safeWait(2.8) then return end
+            deployLawnmower(1, DATA.LAW4, "LAW4_3")
+
+            DebugLog("⏱️ [STEP 5] รอ 2.3 วินาที เพื่อวางตัวที่ 5")
+            if not safeWait(2.3) then return end
+            deployLawnmower(1, DATA.LAW4, "LAW5")
+
+            DebugLog("⏱️ [STEP 6] รอ 2.3 วินาที เพื่อวางตัวที่ 6")
+            if not safeWait(2.3) then return end
+            deployLawnmower(1, DATA.LAW4, "LAW6")
+
+            -- ======================================
+            -- 🔥 [SPAM MODE] วางรัวๆ 30 ตัว หลัง LAW 6 🔥
+            -- ======================================
+            DebugLog("🔥 [SPAM MODE] เริ่มวางรัวๆ 30 ตัว (LAW 7 ถึง LAW 36) ดีเลย์ 0.1 วิ!")
+            for i = 7, 36 do
+                if not safeWait(0.1) then return end
+                deployLawnmower(1, DATA.LAW4, "LAW" .. tostring(i))
+            end
+            
+            DebugLog("⏱️ [FINISH] วางเสร็จสิ้น รอ 2 วินาทีก่อนสั่ง Restart...")
+            if not safeWait(2) then return end
         end
+
         while not isEnd.value do task.wait(1) end
     end
 
     while true do
-        runSession()
+        runBGardenSession()
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
             for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
