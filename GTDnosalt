@@ -181,7 +181,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [3] ANTI-LAG & SUPER UI KILLER (✨ อัปเดต Soft-Kill UI)
+-- [3] ANTI-LAG & SUPER UI KILLER (✨ อัปเดตลบ GameEnd ทุกเฟรม!)
 -- ==========================================
 task.spawn(function()
     while task.wait(120) do pcall(function() collectgarbage("collect") end) end
@@ -189,11 +189,6 @@ end)
 
 task.spawn(function()
     local killWords = {"join event", "notify me", "เข้าร่วมกิจกรรม", "แจ้งเตือนฉัน", "x2 space"}
-    
-    -- 🛡️ ป้องกันไม่ให้เผลอไปปิด UI หลักของเกม
-    local safeScreens = {["GameGui"] = true, ["GameGuiNoInset"] = true, ["TradeStatusUI"] = true, ["BubbleChat"] = true, ["SimpleVIM_UI"] = true}
-    local safeFrames = {["Trade"] = true, ["Bottom"] = true, ["Middle"] = true, ["Top"] = true, ["Inventory"] = true, ["Sidebar"] = true, ["WaveControls"] = true}
-
     local function huntAndDestroy(parentObj)
         if not parentObj then return end
         for _, v in ipairs(parentObj:GetDescendants()) do
@@ -202,15 +197,13 @@ task.spawn(function()
                 for _, word in ipairs(killWords) do
                     if string.find(txt, word, 1, true) then
                         local screen = v:FindFirstAncestorWhichIsA("ScreenGui")
-                        if screen and not safeScreens[screen.Name] then
-                            -- ถ้าไม่ใช่หน้าจอหลัก ให้ปิดการแสดงผลไปเลย
+                        if screen and screen.Name ~= "GameGui" and screen.Name ~= "TradeStatusUI" and screen.Name ~= "BubbleChat" then
                             screen.Enabled = false
                         else
-                            -- ถ้าอยู่ใน GameGui ให้ไล่ปิดเฉพาะ Frame นอกสุดที่ไม่สำคัญ
                             local frame = v:FindFirstAncestorWhichIsA("Frame")
-                            if frame and not safeFrames[frame.Name] then
+                            if frame and frame.Name ~= "Trade" and frame.Name ~= "Bottom" and frame.Name ~= "Middle" then
                                 frame.Visible = false
-                                -- 🛑 ห้ามใช้ Position = 100,0,100,0 เด็ดขาด! มันทำให้สคริปต์เกมพัง
+                                frame.Position = UDim2.new(100, 0, 100, 0)
                             end
                         end
                     end
@@ -219,27 +212,33 @@ task.spawn(function()
         end
     end
 
-    while task.wait(1) do
+    while task.wait(0.5) do
         pcall(function()
-            -- สแกนเฉพาะ UI ของผู้เล่น เลิกยุ่งกับ CoreGui หรือ Executor UI
-            huntAndDestroy(LP:FindFirstChild("PlayerGui"))
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+            huntAndDestroy(player:FindFirstChild("PlayerGui"))
+            huntAndDestroy(game:GetService("CoreGui"))
+            if gethui then huntAndDestroy(gethui()) end
         end)
     end
 end)
 
--- 🛑 ระบบซ่อน GameEnd / LevelUp ทุกเฟรม (ยังคงไว้เพราะกันบัคค้างข้ามรอบได้ดีสุด)
+-- 🛑 [NEW] ระบบลบ UI บัคระดับ Frame-by-Frame! วิ่งทำงานรัวๆ ไม่มีพลาด!
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
         if gameGui and gameGui:FindFirstChild("Screen") then
+            -- กำจัดหน้าจอจบเกม (GameEnd)
             local gameEnd = gameGui.Screen:FindFirstChild("GameEnd")
             if gameEnd and gameEnd.Visible then
                 gameEnd.Visible = false
+                gameEnd.Position = UDim2.new(100, 0, 100, 0)
             end
             
+            -- กำจัดหน้าจอเลเวลอัป (LevelUp)
             local levelUp = gameGui.Screen:FindFirstChild("LevelUp")
             if levelUp and levelUp.Visible then
                 levelUp.Visible = false
+                levelUp.Position = UDim2.new(100, 0, 100, 0)
             end
         end
     end)
