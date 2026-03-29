@@ -775,8 +775,8 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.3 ล้วน
-        local offset = 1.3
+        -- 📌 ระยะสุ่ม 1.5 ล้วน (อัปเดตเป็น 1.5 ตามที่ขอ!)
+        local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
 
