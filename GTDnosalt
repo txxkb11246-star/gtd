@@ -11,7 +11,7 @@ getgenv().FarmRockbottomActive = true
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "Unknown", 
-    Url = "https://nosalt-final.vercel.app/update", 
+    Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
     Interval = 120, 
     EnableWebhookLog = true,
     GameName = "Garden TD",
