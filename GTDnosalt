@@ -18,7 +18,7 @@ local CONFIG = getgenv().GardenConfig or {
     SelectMap = "AutoSeed", 
     ClickMode = "Fire", 
     EnableDebug = true,
-    BoxName = "ub_tropical" -- 📦 ID กล่องที่จะให้บอทสุ่ม (เช่น ub_tropical, ub_space)
+    BoxName = "ub_tropical" -- 📦 ID กล่องที่จะให้บอทสุ่ม 
 }
 
 if getgenv().EnableHorst then
@@ -43,7 +43,7 @@ local function DebugLog(msg)
     if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
 
--- 📦 ฐานข้อมูลสำหรับการแบนยูนิต (อิงตาม Hina Trade)
+-- 📦 ฐานข้อมูลสำหรับการแบนยูนิต
 local BOX_DATA = {
     ["ub_space"] = {"unit_robo_stem", "unit_electric_jabber", "unit_cyborg_farmer", "unit_tri_orb", "unit_alien_plant", "unit_quantum_stem", "unit_space_booster"},
     ["ub_greenhouse"] = {"unit_stem_blast","unit_cannoneer","unit_multi_boom","unit_vine_guy","unit_clawfruit","unit_seed_wing","unit_spirit_flower"},
@@ -92,7 +92,15 @@ local function GetCurrentSeeds()
         if display and display:FindFirstChild("Title") then
             local txt = display.Title.Text
             txt = string.gsub(txt, ",", "") -- ลบลูกน้ำออก
-            val = tonumber(string.match(txt, "%d+")) or 0 -- ดึงมาเฉพาะตัวเลข
+            local numStr, suffix = string.match(string.lower(txt), "([%d%.]+)%s*([kmb]?)")
+            if numStr then
+                val = tonumber(numStr)
+                if suffix == "k" then val = val * 1000 
+                elseif suffix == "m" then val = val * 1000000 
+                elseif suffix == "b" then val = val * 1000000000 end
+            else
+                val = tonumber(string.match(txt, "%d+")) or 0
+            end
         end
     end)
     return val
@@ -349,19 +357,17 @@ local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     
     local success, err = pcall(function()
-        local seedText, gemText = "0", "0"
-        pcall(function() seedText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+        local seedsAmount = GetCurrentSeeds()
+        local gemText = "0"
         pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
-        
-        local sNum = tonumber((seedText:gsub(",", ""):match("%d+"))) or 0
         local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-        if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
+        if seedsAmount > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
             local payload = { 
                 device = CONFIG.DeviceName, 
                 username = LP.Name, 
-                seed = sNum, 
+                seed = seedsAmount, 
                 gems = gemsAmount, 
                 raff = hasRaff, 
                 lawn = hasLawn, 
@@ -391,13 +397,13 @@ local function updateLogData()
                 )
             end
             
-            lastS, lastG, lastT = sNum, gemsAmount, tick()
+            lastS, lastG, lastT = seedsAmount, gemsAmount, tick()
         end
     end)
 end
 
 task.spawn(function()
-    DebugLog("🚀 System Started")
+    DebugLog("🚀 System Started (Ngrok Bypass Mode)")
     while true do 
         task.spawn(updateLogData)
         task.wait(1) 
@@ -949,49 +955,37 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 LOBBY GATEKEEPER)
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 STRICT GATEKEEPER)
 -- ==========================================
 
 local function executeAutoBuyRaff()
-    local hasRaff, _ = GetTrueOwnedInventory()
-    if hasRaff then return end
-
-    local seedsAmount = GetCurrentSeeds()
-
-    if seedsAmount >= 75000 then
-        local lastRaffBuy = getgenv().LastRaffBuy or 0
-        if tick() - lastRaffBuy > 15 then
-            getgenv().LastRaffBuy = tick()
-            DebugLog("🛒 [SHOP] ตังค์พอแล้ว (75k+)! ไม่พบ Rafflesia สแกนหา Remote ยิงซื้อ 1 ครั้ง...")
-            
-            local buyRemote = nil
-            pcall(function() buyRemote = game.WTBuyItem end)
-            
-            if not buyRemote then
-                for _, obj in ipairs(game:GetDescendants()) do
-                    if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
-                        buyRemote = obj; break
-                    end
-                end
-            end
-
-            if buyRemote then
-                task.spawn(function()
-                    pcall(function()
-                        local args = { "normal", 300, "300-3" }
-                        buyRemote:InvokeServer(unpack(args))
-                    end)
-                end)
-                DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ (รอผลลัพธ์...)")
-            else
-                DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
+    DebugLog("🛒 [SHOP] เริ่มกระบวนการซื้อ Rafflesia...")
+    local buyRemote = nil
+    pcall(function() buyRemote = game.WTBuyItem end)
+    
+    if not buyRemote then
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
+                buyRemote = obj; break
             end
         end
+    end
+
+    if buyRemote then
+        task.spawn(function()
+            pcall(function()
+                local args = { "normal", 300, "300-3" }
+                buyRemote:InvokeServer(unpack(args))
+            end)
+        end)
+        DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ (รอเซิร์ฟเวอร์ตอบกลับ...)")
+    else
+        DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
     end
 end
 
 local function executeAutoRollLawn()
-    DebugLog("🎰 [GACHA MODE] เริ่มสุ่ม Lawnmower ด้วยระบบ Hina Gacha!")
+    DebugLog("🎰 [GACHA MODE] เริ่มสุ่ม Lawnmower ด้วยระบบ Hina Gacha (Fast Roll)!")
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 10)
     local re = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
     local BuyFunction = rf and rf:FindFirstChild("BuyUnitBox")
@@ -1005,12 +999,12 @@ local function executeAutoRollLawn()
     for _, uName in ipairs(boxInfo) do
         pcall(function() BanEvent:FireServer(CONFIG.BoxName, uName, true) end)
     end
-    task.wait(2) -- รอให้ระบบแบนซิงค์
+    task.wait(2) -- รอเซิร์ฟเวอร์อัปเดตแบน
 
     local stuckTimer = tick()
     local lastSeeds = GetCurrentSeeds()
 
-    DebugLog("🎲 เริ่มลูปสุ่ม Ultra Fast...")
+    DebugLog("🎲 เริ่มลูปสุ่ม Ultra Fast Async...")
     while true do
         local _, hasLawn = GetTrueOwnedInventory()
         if hasLawn then
@@ -1049,9 +1043,13 @@ local function executeAutoRollLawn()
     end
 end
 
--- 🔄 ระบบควบคุมหลักใน Lobby (The Strict Gatekeeper)
+-- 🔄 ระบบควบคุมหลักใน Lobby (THE IRON GATEKEEPER)
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    
+    -- 🛑 Hard Wait: ยืนรอโง่ๆ หน้าล็อบบี้ 5 วิ ให้ทุกอย่าง (UI เงิน) โหลดเสร็จชัวร์ 100%
+    DebugLog("⏳ [GATEKEEPER] รอ 5 วินาที เพื่อให้ตัวเลขเงินซิงค์ข้อมูลกับเซิร์ฟเวอร์...")
+    task.wait(5)
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
@@ -1062,33 +1060,29 @@ local function StartLobbyMasterEngine()
                 task.wait(2) 
             end
 
-            -- 🛑 ด่านที่ 1: ดึงสถานะกระเป๋าและเงิน
             local hasRaff, hasLawn = GetTrueOwnedInventory()
-            local seedsAmount = 0
-            for i = 1, 10 do
-                seedsAmount = GetCurrentSeeds()
-                if seedsAmount > 0 then break end
-                task.wait(1)
-            end
+            local seedsAmount = GetCurrentSeeds()
+            
+            DebugLog("📊 [SCAN] กระเป๋าตอนนี้ -> Raff: " .. tostring(hasRaff) .. " | Lawn: " .. tostring(hasLawn) .. " | เงิน: " .. tostring(seedsAmount))
 
-            -- 🛑 ด่านที่ 2: Priority 1 (บังคับซื้อ Rafflesia ถ้าเงินพอ)
+            -- 🛑 ด่านที่ 1: Priority 1 (บังคับซื้อ Rafflesia ถ้าเงินพอ)
             if not hasRaff and seedsAmount >= 75000 then
                 executeAutoBuyRaff()
-                task.wait(2)
-                return -- จบลูปนี้เพื่อให้มันเริ่มเช็คกระเป๋าและเงินใหม่
+                task.wait(3) -- รอรับของ
+                return -- 🛑 เตะกลับไปเริ่มลูปใหม่ เพื่อให้สแกนเงินและกระเป๋าอีกรอบ ห้ามทะลุไปเดิน!
             end
             
-            -- 🛑 ด่านที่ 3: Priority 2 (บังคับสุ่ม Lawn ถ้าตังค์พอและยังไม่มี)
+            -- 🛑 ด่านที่ 2: Priority 2 (บังคับสุ่ม Lawn ถ้าตังค์พอ)
             if not hasLawn and seedsAmount >= 850 then
                 executeAutoRollLawn()
-                task.wait(2)
-                return -- จบลูปนี้เพื่อให้มันเริ่มเช็คกระเป๋าและเงินใหม่
+                task.wait(2) -- รอรับของ
+                return -- 🛑 เตะกลับไปเริ่มลูปใหม่ เพื่อให้สแกนเงินและกระเป๋าอีกรอบ ห้ามทะลุไปเดิน!
             end
             
-            -- 🟢 ถ้าผ่าน 3 ด่านด้านบนมาได้แปลว่า: ของครบแล้ว หรือ เงินหมดเกลี้ยง! ให้เตรียมเข้าด่าน
+            -- 🟢 ด่านที่ 3: ถ้าทะลุ 2 ด่านข้างบนมาได้ แปลว่า "ของครบแล้ว" หรือ "เงินไม่มีแล้วจริงๆ" ค่อยให้ไปฟาร์ม
             local targetMapName, plan = GetRoutingPlan()
             
-            -- 🎒 4. จัดกระเป๋าเตรียมวาร์ป
+            -- 🎒 จัดกระเป๋าเตรียมวาร์ป
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 local equipName = "unique_1"
@@ -1104,12 +1098,12 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚶 5. เดินไปวาร์ปเข้าด่าน
+            -- 🚶 เดินไปวาร์ปเข้าด่าน
             local pads = {85.05, 97.05, 109.05, 121.05}
             local pID = math.random(5, 8)
             
             if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-                DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
+                DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว ยืนยันเงินหมด/ของครบ กำลังเดินไปวาร์ปที่ " .. targetMapName)
                 LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
                 task.wait(5.5) 
                 rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
