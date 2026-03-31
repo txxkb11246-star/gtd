@@ -99,7 +99,7 @@ local function GetTrueOwnedInventory()
     pcall(function()
         local bUI = LP.PlayerGui:FindFirstChild("BackpackGui")
         if bUI and bUI:FindFirstChild("Backpack") and bUI.Backpack:FindFirstChild("Hotbar") then
-            -- 🛑 แก้ไขแล้ว: ค้นหาแค่ช่อง 1-5
+            -- สแกนแค่ 5 ช่องหลัก
             for i = 1, 5 do
                 local slot = bUI.Backpack.Hotbar:FindFirstChild(tostring(i))
                 if slot and slot:FindFirstChild("ToolName") then
@@ -459,7 +459,6 @@ local function IsInHotbar(unitName)
     if not hb then return false end
     
     local key = string.lower(unitName)
-    -- 🛑 แก้ไขแล้ว: ค้นหาแค่ช่อง 1-5
     for i = 1, 5 do
         local slot = hb:FindFirstChild(tostring(i))
         if slot and slot:FindFirstChild("ToolName") then
@@ -478,7 +477,6 @@ local function EnsureHotbarSpace(requiredShortName)
     local count = 0
     local unneededName = nil
     
-    -- 🛑 แก้ไขแล้ว: เช็คแค่ช่อง 1-5
     for i = 1, 5 do
         local slot = hotbar:FindFirstChild(tostring(i))
         if slot and slot:FindFirstChild("ToolName") and slot.ToolName.Text ~= "" then
@@ -489,7 +487,6 @@ local function EnsureHotbarSpace(requiredShortName)
         end
     end
 
-    -- 🛑 แก้ไขแล้ว: ถ้าเต็ม 5 ช่อง ค่อยถอดทิ้ง
     if count >= 5 and unneededName then
         DebugLog("🧹 [HOTBAR] ช่องสวมใส่เต็ม ("..count.."/5)! กำลังถอดตัวที่ไม่จำเป็น: " .. unneededName)
         
@@ -518,7 +515,6 @@ end
 local function TripleLayerEquip(shortName, fullName)
     if IsInHotbar(shortName) then return true end
     
-    -- 🛑 เคลียร์พื้นที่ Hotbar ให้ว่างก่อนใส่ตัวใหม่ (ระบบ 5 ช่อง)
     EnsureHotbarSpace(shortName)
     
     pcall(function()
@@ -876,7 +872,6 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.5 ล้วน
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
@@ -989,7 +984,7 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 ASYNC FAST ROLL)
 -- ==========================================
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -1015,7 +1010,7 @@ local function StartLobbyMasterEngine()
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-            -- 🟢 1. เช็คกระเป๋า ถ้าไม่มี Raff ให้ยิงซื้อ 1 ครั้ง
+            -- 🟢 1. เช็คกระเป๋า ถ้าไม่มี Raff ให้ยิงซื้อ 1 ครั้ง (ใช้ระบบ Hunter Scan ทุก Config)
             local lastRaffBuy = getgenv().LastRaffBuy or 0
             if not hasRaff and (tick() - lastRaffBuy > 15) then
                 getgenv().LastRaffBuy = tick()
@@ -1063,7 +1058,7 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚀 2. สุ่ม Gacha Lawnmower จนกว่าจะได้หรือจนกว่าตู้จะบอกว่าตังค์ไม่พอ
+            -- 🚀 2. สุ่ม Gacha Lawnmower (🔥 Async Fast Roll + 25s Timeout)
             if shouldRoll then
                 if seedsAmount >= 850 then
                     DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มหา Lawnmower แบบต่อเนื่อง!")
@@ -1071,21 +1066,29 @@ local function StartLobbyMasterEngine()
                     local stuckTimer = tick()
 
                     while true do
+                        -- แอบพักหายใจให้ UI โหลดทัน 1 วิ
+                        task.wait(1)
+
                         local currentSeedsText = "0"
                         pcall(function() currentSeedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
                         local currentSeeds = SafeNum(currentSeedsText)
                         
-                        -- ถ้าสุ่มได้ Lawn แล้ว ให้พัง Loop ทันที
+                        -- เช็คของในกระเป๋าแยกต่างหาก
                         local currentHasRaff, currentHasLawn = GetTrueOwnedInventory()
                         if currentHasLawn then
                             DebugLog("🎉 [GACHA] ได้ Lawnmower แล้วโว้ย! หยุดการสุ่ม!")
                             break
                         end
 
-                        -- 🛑 กันค้างสุ่ม
+                        if currentSeeds < 850 then
+                            DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
+                            break
+                        end
+
+                        -- 🛑 กันค้างสุ่ม (ขยายเวลาเป็น 25 วินาที)
                         if currentSeeds == lastGachaSeeds then
-                            if tick() - stuckTimer > 15 then
-                                DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด เตะตัวเองไปฟาร์มต่อ!")
+                            if tick() - stuckTimer > 25 then
+                                DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 25 วินาทีแต่เงินไม่ลด เตะตัวเองไปฟาร์มต่อ!")
                                 break
                             end
                         else
@@ -1093,17 +1096,19 @@ local function StartLobbyMasterEngine()
                             stuckTimer = tick()
                         end
                         
+                        -- 🔥 สั่งยิงสุ่มผ่าน task.spawn เพื่อไม่ให้ค้างรอเซิร์ฟเวอร์
                         if currentSeeds >= 8500 then
-                            DebugLog("🎰 สุ่มกล่อง 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                            pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
-                            task.wait(5.5)
-                        elseif currentSeeds >= 850 then
-                            DebugLog("🎰 สุ่มกล่อง 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                            pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
-                            task.wait(2.5)
+                            DebugLog("🎰 กดสั่งสุ่ม x10 (เงิน: " .. tostring(currentSeeds) .. ")")
+                            task.spawn(function()
+                                pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
+                            end)
+                            task.wait(3.5) -- รออนิเมชั่นสุ่มนิดนึง
                         else
-                            DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
-                            break
+                            DebugLog("🎰 กดสั่งสุ่ม x1 (เงิน: " .. tostring(currentSeeds) .. ")")
+                            task.spawn(function()
+                                pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
+                            end)
+                            task.wait(1.5)
                         end
                     end
                 else
