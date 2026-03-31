@@ -17,7 +17,8 @@ local CONFIG = getgenv().GardenConfig or {
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
     ClickMode = "Fire", 
-    EnableDebug = true
+    EnableDebug = true,
+    BoxName = "ub_tropical" -- 📦 ชื่อกล่องที่จะให้บอทสุ่ม
 }
 
 if getgenv().EnableHorst then
@@ -228,14 +229,11 @@ RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
         if gameGui and gameGui:FindFirstChild("Screen") then
-            -- กำจัดหน้าจอจบเกม (GameEnd)
             local gameEnd = gameGui.Screen:FindFirstChild("GameEnd")
             if gameEnd and gameEnd.Visible then
                 gameEnd.Visible = false
                 gameEnd.Position = UDim2.new(100, 0, 100, 0)
             end
-            
-            -- กำจัดหน้าจอเลเวลอัป (LevelUp)
             local levelUp = gameGui.Screen:FindFirstChild("LevelUp")
             if levelUp and levelUp.Visible then
                 levelUp.Visible = false
@@ -282,7 +280,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [4] AFK & WEBHOOK LOG (🚀 NGROK BYPASS VERSION)
+-- [4] AFK & WEBHOOK LOG (🚀 NGROK BYPASS)
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -928,9 +926,38 @@ local function StartLobbyMasterEngine()
                 task.wait(2) 
             end
 
-            local seedsText = "0"
-            pcall(function() seedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
-            local seedsAmount = SafeNum(seedsText)
+            -- 🛑 อัปเกรด: รอให้ตัวเลขเงินโหลดเสร็จก่อนค่อยทำงาน (กันบัคอ่านค่าได้ 0)
+            local seedsAmount = 0
+            for i = 1, 10 do
+                local seedsText = "0"
+                pcall(function() seedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+                seedsAmount = SafeNum(seedsText)
+                if seedsAmount > 0 then break end
+                task.wait(1)
+            end
+
+            local hasRaff, hasLawn = GetTrueOwnedInventory()
+
+            -- 🟢 ระบบฉีดคำสั่งซื้อ Rafflesia ฉุกเฉิน (ยิงไปเลยไม่ต้องสนเงินพอไหม!)
+            local lastRaffBuy = getgenv().LastRaffBuy or 0
+            if not hasRaff and (tick() - lastRaffBuy > 15) then
+                getgenv().LastRaffBuy = tick()
+                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! ยิงคำสั่งซื้อฉุกเฉิน 2 ครั้ง (เงินพอไม่พอช่างมัน!)")
+                for i = 1, 2 do
+                    pcall(function()
+                        local args = { "normal", 300, "300-3" }
+                        local result
+                        if game:FindFirstChild("WTBuyItem") then
+                            result = game.WTBuyItem:InvokeServer(unpack(args))
+                        else
+                            result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
+                        end
+                        DebugLog("🛒 Buy Result " .. tostring(i) .. ": " .. tostring(result))
+                    end)
+                    task.wait(0.5)
+                end
+                hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋าใหม่หลังซื้อ
+            end
             
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
@@ -977,12 +1004,12 @@ local function StartLobbyMasterEngine()
                     end
                     
                     if currentSeeds >= 8500 then
-                        DebugLog("🎰 สุ่มกล่อง Tropical แบบ 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                        pcall(function() rf.BuyUnitBox:InvokeServer("ub_tropical", 10) end)
+                        DebugLog("🎰 สุ่มกล่องแบบ 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
                         task.wait(5.5)
                     elseif currentSeeds >= 850 then
-                        DebugLog("🎰 สุ่มกล่อง Tropical แบบ 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                        pcall(function() rf.BuyUnitBox:InvokeServer("ub_tropical", 1) end)
+                        DebugLog("🎰 สุ่มกล่องแบบ 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
                         task.wait(2.5)
                     else
                         DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
