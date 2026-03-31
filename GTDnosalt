@@ -52,7 +52,7 @@ local BOX_DATA = {
     ["ub_crystal"] = {"unit_glow_fruit","unit_hammer","unit_slap_leaf","unit_dragonfruit","unit_magic_pot","unit_zapper"},
     ["ub_bee"] = {"unit_banana","unit_worker","unit_fruit_lobber","unit_venus_floortrap","unit_aloe_vera","unit_pomegranate"},
     ["ub_sun"] = {"unit_fire_flower","unit_sound_plant","unit_durian","unit_eggplant","unit_razor","unit_sprinkler"},
-    ["ub_tropical"] = {"unit_radish","unit_scarecrow","unit_kiwi_cannon","unit_grandma","unit_umbra","unit_stun_flower"} -- 🛑 ไม่มี lawnmower
+    ["ub_tropical"] = {"unit_radish","unit_scarecrow","unit_kiwi_cannon","unit_grandma","unit_umbra","unit_stun_flower"} -- 🛑 ไม่มี lawnmower แน่นอน
 }
 
 -- ==========================================
@@ -82,11 +82,14 @@ end)
 -- [2] GLOBAL UTILITIES & SMART ROUTING
 -- ==========================================
 
--- 💵 ฟังก์ชันอ่านเงินแบบโคตรชัวร์ (Bulletproof)
+-- 💵 ฟังก์ชันอ่านเงินแบบโคตรชัวร์ (ลบลูกน้ำ และอ่านค่า K/M/B ได้เป๊ะๆ)
 local function GetExactSeeds()
     local val = 0
     pcall(function()
-        local title = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title
+        local title = LP.PlayerGui:FindFirstChild("SeedsDisplay", true)
+        if not title then
+            title = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title
+        end
         if title then
             local txt = string.gsub(title.Text, ",", "")
             txt = string.gsub(txt, " ", "")
@@ -101,7 +104,7 @@ local function GetExactSeeds()
             end
         end
     end)
-    return val
+    return math.floor(val)
 end
 
 local function GetTrueOwnedInventory()
@@ -170,7 +173,7 @@ local function GetRoutingPlan()
     return targetMapName, farmUnit
 end
 
--- 🚀 ถอนตัวกลับ Lobby แบบทันที (Instant Return)
+-- 🚀 ถอนตัวกลับ Lobby แบบทันที (Instant Return กลางด่าน)
 local isGoingLobby = false
 local function CheckAndGoLobbyIfRich()
     if isGoingLobby then return true end
@@ -181,12 +184,14 @@ local function CheckAndGoLobbyIfRich()
     local shouldGoLobby = false
     local reason = ""
 
+    -- 🛑 เช็คความจำเป็น (ถ้าครบแล้วจะไม่กลับเด็ดขาด)
     if not hasRaff and seedsAmount >= 75000 then
         shouldGoLobby = true
         reason = "ไปซื้อ Rafflesia (75k+)"
-    elseif not hasLawn and seedsAmount >= 8500 then
+    elseif not hasLawn and seedsAmount >= 3500 then
+        -- 🔥 ถึง 3500 ปุ๊บ เด้งกลับเลย! ไม่ต้องรอ 8500
         shouldGoLobby = true
-        reason = "ไปสุ่ม Lawnmower (8500+)"
+        reason = "ไปสุ่ม Lawnmower (3500+)"
     end
 
     if shouldGoLobby then
@@ -208,7 +213,7 @@ local function CheckAndGoLobbyIfRich()
     return false
 end
 
--- 🟢 ระบบมอนิเตอร์ Game End + เช็คเงินกลางด่านตลอดเวลา!
+-- 🟢 ระบบมอนิเตอร์ Game End + เช็คเงินกลางด่านตลอดเวลา
 local function StartGameEndMonitor(isEndTable)
     task.spawn(function()
         while not isEndTable.value do
@@ -224,7 +229,7 @@ local function StartGameEndMonitor(isEndTable)
                     end
                 end
                 
-                -- 🔴 ตรวจสอบยอดเงินทุกๆ 0.5 วิ ถ้าถึง 8500 เด้งออกทันที 🔴
+                -- 🔴 ตรวจสอบยอดเงินทุกๆ 0.5 วิ ถ้าถึงเกณฑ์เด้งออกทันที 🔴
                 if CheckAndGoLobbyIfRich() then
                     isEndTable.value = true
                 end
@@ -661,7 +666,9 @@ local function RunIceFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -725,7 +732,9 @@ local function RunSpaceFarmMaster()
     while true do
         runSpaceSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -813,7 +822,9 @@ local function RunTomatoFarmMaster()
     while true do
         runTomatoSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -949,7 +960,9 @@ local function RunBGardenFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -995,22 +1008,26 @@ end
 
 local function executeAutoRollLawn()
     local seedsAmount = GetExactSeeds()
-    if seedsAmount < 8500 then return end
     
-    DebugLog("🎰 [GACHA MODE] เงินถึง 8500 แล้ว! ดึงระบบแบน+สุ่ม รอโหลด Remote...")
+    -- 🛑 เช็คแบบ "มีตังพอสุ่มก็ลุยเลย" (ไม่ต้องรอ 8500 อีกต่อไปแล้ว!)
+    if seedsAmount < 850 then
+        DebugLog("⚠️ เงินไม่ถึง 850 (มี " .. tostring(seedsAmount) .. ") หมดตูดแล้ว ขอไปฟาร์มต่อ!")
+        return 
+    end
+
+    DebugLog("🎰 [GACHA MODE] เงินพอสุ่มแล้ว! ดึงระบบแบน+สุ่ม รอโหลด Remote...")
     
-    -- 🛑 บังคับให้รอจนกว่าโฟลเดอร์ Remote จะโหลดเสร็จจริงๆ สูงสุด 10 วิ!
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 10)
     local re = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
     if not rf or not re then 
-        DebugLog("❌ โหลดโฟลเดอร์ Remote ไม่ทัน ยกเลิกสุ่ม!")
+        DebugLog("❌ โหลดโฟลเดอร์ Remote ไม่ทันใน 10 วิ!")
         return 
     end
 
     local BuyFunction = rf:WaitForChild("BuyUnitBox", 10)
     local BanEvent = re:WaitForChild("BanFromUnitBox", 10)
     if not BuyFunction or not BanEvent then 
-        DebugLog("❌ โหลด Remote สุ่มไม่ทัน ยกเลิกสุ่ม!")
+        DebugLog("❌ โหลด Remote สุ่มไม่ทันใน 10 วิ ยกเลิกการสุ่มไปฟาร์มก่อน!")
         return 
     end
 
@@ -1020,7 +1037,7 @@ local function executeAutoRollLawn()
     for _, uName in ipairs(boxInfo) do
         pcall(function() BanEvent:FireServer(CONFIG.BoxName, uName, true) end)
     end
-    task.wait(2)
+    task.wait(2) -- รอให้ระบบแบนซิงค์
 
     local stuckTimer = tick()
     local lastSeeds = GetExactSeeds()
@@ -1035,7 +1052,7 @@ local function executeAutoRollLawn()
 
         local currSeeds = GetExactSeeds()
         
-        -- ให้สุ่มจนกว่าเงินจะหมดจริงๆ
+        -- 🔥 บังคับสุ่มจนกว่าเงินจะหมดจริงๆ (น้อยกว่า 850)
         if currSeeds < 850 then
             DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. currSeeds .. ") หยุดสุ่ม!")
             break
@@ -1064,13 +1081,18 @@ local function executeAutoRollLawn()
     end
 end
 
--- 🔄 ระบบควบคุมหลักใน Lobby (THE IRON GATEKEEPER)
+-- 🔄 ระบบควบคุมหลักใน Lobby
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 15)
     
-    -- 🛑 Hard Wait: ยืนรอโง่ๆ หน้าล็อบบี้ 5 วิ ให้ทุกอย่างโหลดเสร็จ 100%
-    DebugLog("⏳ [GATEKEEPER] รอ 5 วินาที เพื่อให้ตัวเลขเงินซิงค์ข้อมูลกับเซิร์ฟเวอร์...")
-    task.wait(5)
+    -- 🛑 ด่านที่ 1: ยืนรอให้ UI เงินโหลดขึ้นมาจริงๆ (สูงสุด 15 วิ)
+    DebugLog("⏳ [GATEKEEPER] รอให้ตัวเลขเงินซิงค์ข้อมูลกับเซิร์ฟเวอร์...")
+    local seedsAmount = 0
+    for i = 1, 15 do
+        seedsAmount = GetExactSeeds()
+        if seedsAmount > 0 then break end
+        task.wait(1)
+    end
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
@@ -1082,25 +1104,25 @@ local function StartLobbyMasterEngine()
             end
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
-            local seedsAmount = GetExactSeeds()
+            seedsAmount = GetExactSeeds()
             
             DebugLog("📊 [SCAN] กระเป๋าตอนนี้ -> Raff: " .. tostring(hasRaff) .. " | Lawn: " .. tostring(hasLawn) .. " | เงิน: " .. tostring(seedsAmount))
 
-            -- 🛑 ด่านที่ 1: บังคับซื้อ Rafflesia (ถ้าขาดและเงินพอ 75k)
+            -- 🛑 ด่านที่ 2: บังคับซื้อ Rafflesia (ถ้าขาดและเงินพอ 75k)
             if not hasRaff and seedsAmount >= 75000 then
                 executeAutoBuyRaff()
                 task.wait(3) 
-                return -- กลับไปลูปใหม่สแกนตังค์
+                return -- ลูปใหม่สแกนตังค์
             end
             
-            -- 🛑 ด่านที่ 2: บังคับสุ่ม Lawn (ถ้าขาดและเงินพอ 8500)
-            if not hasLawn and seedsAmount >= 8500 then
+            -- 🛑 ด่านที่ 3: บังคับสุ่ม Lawn (ถ้าขาดและเงินพอ 850)
+            if not hasLawn and seedsAmount >= 850 then
                 executeAutoRollLawn()
                 task.wait(2) 
-                return -- กลับไปลูปใหม่สแกนตังค์
+                return -- ลูปใหม่สแกนตังค์
             end
             
-            -- 🟢 ด่านที่ 3: ไปฟาร์มได้!
+            -- 🟢 ด่านที่ 4: ไปฟาร์มได้!
             local targetMapName, plan = GetRoutingPlan()
             
             if not IsInHotbar(plan) then
