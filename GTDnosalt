@@ -120,18 +120,17 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
--- 🚀 อัปเกรด Logic การเลือกเส้นทาง (แก้ไขบัคมี Raff แล้วไม่ยอมสุ่ม Lawn)
+-- 🚀 อัปเกรด Logic การเลือกเส้นทาง (บังคับสุ่ม Lawn ในทุกคอนฟิคถ้ายังไม่มี)
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
-    local shouldRollGacha = not hasLawn -- ตราบใดที่ไม่มี Lawn ถือว่าต้องสุ่มเสมอ!
+    local shouldRollGacha = not hasLawn -- ตราบใดที่ยังไม่มี Lawn ต้องสั่งสุ่มเสมอ!
 
     if CONFIG.SelectMap == "AutoSeed" or CONFIG.SelectMap == "BGarden" then
         if hasLawn then
             targetMapName = "map_back_garden"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         elseif hasRaff then
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
@@ -143,7 +142,6 @@ local function GetRoutingPlan()
         if hasLawn then
             targetMapName = "map_space"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         elseif hasRaff then
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
@@ -152,7 +150,6 @@ local function GetRoutingPlan()
             farmUnit = "Tomato"
         end
     elseif CONFIG.SelectMap == "Ice" then
-        shouldRollGacha = not hasRaff -- ถ้าเล่นแค่ Ice ก็สุ่มหาแค่ Raff
         if hasRaff then
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
@@ -365,13 +362,8 @@ local function updateLogData()
             end
             
             lastS, lastG, lastT = sNum, gemsAmount, tick()
-            DebugLog("⚡ [NOSALT] ทะลวง Ngrok สำเร็จ! ส่งข้อมูลแล้ว -> Seed: " .. tostring(sNum))
         end
     end)
-    
-    if not success then
-        DebugLog("❌ [ERROR] ส่งข้อมูลไม่สำเร็จ: " .. tostring(err))
-    end
 end
 
 task.spawn(function()
@@ -807,7 +799,7 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.5 ล้วน (แก้การกระจุกตัวตอน Spam)
+        -- 📌 ระยะสุ่ม 1.5 ล้วน 
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
@@ -934,7 +926,7 @@ local function StartLobbyMasterEngine()
                 task.wait(2) 
             end
 
-            -- 🛑 รอให้ตัวเลขเงินโหลดเสร็จก่อนค่อยทำงาน (กันบัคอ่านค่าได้ 0)
+            -- 🛑 รอโหลดเงิน
             local seedsAmount = 0
             for i = 1, 10 do
                 local seedsText = "0"
@@ -946,33 +938,30 @@ local function StartLobbyMasterEngine()
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-            -- 🟢 ระบบซื้อ Raff อัตโนมัติ (Robust System: ยิงคำสั่งซื้อ 1 ครั้ง)
+            -- 🟢 1. เช็คและซื้อ Rafflesia ก่อนเป็นอันดับแรก (ทำในทุก Config)
             local lastRaffBuy = getgenv().LastRaffBuy or 0
             if not hasRaff and (tick() - lastRaffBuy > 15) then
                 getgenv().LastRaffBuy = tick()
-                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! กำลังยิงคำสั่งซื้อ (Robust System)...")
+                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! ยิงคำสั่งซื้อ 1 ครั้ง (ราคา 75,000)")
                 
                 local success, err = pcall(function()
                     local args = { "normal", 300, "300-3" }
-                    local result = game.WTBuyItem:InvokeServer(unpack(args))
-                    DebugLog("🎟️ ซื้อ Raff สำเร็จ! ผลลัพธ์: " .. tostring(result))
+                    local result
+                    if game:FindFirstChild("WTBuyItem") then
+                        result = game.WTBuyItem:InvokeServer(unpack(args))
+                    else
+                        result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
+                    end
+                    DebugLog("🎟️ Buy Result: " .. tostring(result))
                 end)
                 
-                if not success then
-                    DebugLog("⚠️ ไม่พบ WTBuyItem ใน game ลองค้นหาใน ReplicatedStorage...")
-                    pcall(function()
-                        local args = { "normal", 300, "300-3" }
-                        local result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
-                        DebugLog("🎟️ ซื้อ Raff (สำรอง) สำเร็จ! ผลลัพธ์: " .. tostring(result))
-                    end)
-                end
-                
                 task.wait(1)
-                hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋าใหม่
+                hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋า
             end
             
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
+            -- ใส่ของ
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 if plan == "Rafflesia" then TripleLayerEquip("Rafflesia", "unit_rafflesia")
@@ -986,9 +975,9 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚀 อัปเกรดระบบสุ่ม Gacha: สุ่มจนกว่าจะได้ หรือเงินจะหมด + เช็ค Timeout กันค้าง!
+            -- 🚀 2. ระบบสุ่ม Gacha Lawnmower จนกว่าจะได้หรือเงินหมด (กันค้าง)
             if shouldRoll and seedsAmount >= 850 then
-                DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มแบบต่อเนื่อง!")
+                DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มหา Lawnmower แบบต่อเนื่อง!")
                 local lastGachaSeeds = seedsAmount
                 local stuckTimer = tick()
 
@@ -999,28 +988,27 @@ local function StartLobbyMasterEngine()
                     
                     local _, _, needRoll = GetRoutingPlan()
                     if not needRoll then
-                        DebugLog("🎉 [GACHA] ได้ตัวที่ต้องการแล้ว! หยุดการสุ่ม!")
+                        DebugLog("🎉 [GACHA] ได้ Lawnmower แล้ว! หยุดการสุ่ม!")
                         break
                     end
 
-                    -- 🛑 ระบบดักจับการค้าง (ถ้าเวลาผ่านไป 15 วิแล้วเงินไม่ลด = สุ่มพัง)
+                    -- 🛑 กันค้างสุ่ม
                     if currentSeeds == lastGachaSeeds then
                         if tick() - stuckTimer > 15 then
-                            DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด น่าจะค้าง! เตะตัวเองไปฟาร์มต่อ!")
+                            DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด เตะตัวเองไปฟาร์มต่อ!")
                             break
                         end
                     else
-                        -- ถ้าเงินลด แสดงว่าสุ่มสำเร็จ ให้รีเซ็ตเวลาใหม่
                         lastGachaSeeds = currentSeeds
                         stuckTimer = tick()
                     end
                     
                     if currentSeeds >= 8500 then
-                        DebugLog("🎰 สุ่มกล่องแบบ 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        DebugLog("🎰 สุ่มกล่อง 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
                         pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
                         task.wait(5.5)
                     elseif currentSeeds >= 850 then
-                        DebugLog("🎰 สุ่มกล่องแบบ 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        DebugLog("🎰 สุ่มกล่อง 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
                         pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
                         task.wait(2.5)
                     else
@@ -1029,6 +1017,7 @@ local function StartLobbyMasterEngine()
                     end
                 end
             else
+                -- 🚶 3. เดินไปวาร์ปเข้าด่าน
                 local pads = {85.05, 97.05, 109.05, 121.05}
                 local pID = math.random(5, 8)
                 
