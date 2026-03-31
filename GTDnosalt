@@ -12,7 +12,7 @@ getgenv().FarmRockbottomActive = true
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120, -- ⏳ ทำหน้าที่เป็น Force Update ทุก 120 วินาที
+    Interval = 120, 
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
@@ -228,11 +228,14 @@ RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
         if gameGui and gameGui:FindFirstChild("Screen") then
+            -- กำจัดหน้าจอจบเกม (GameEnd)
             local gameEnd = gameGui.Screen:FindFirstChild("GameEnd")
             if gameEnd and gameEnd.Visible then
                 gameEnd.Visible = false
                 gameEnd.Position = UDim2.new(100, 0, 100, 0)
             end
+            
+            -- กำจัดหน้าจอเลเวลอัป (LevelUp)
             local levelUp = gameGui.Screen:FindFirstChild("LevelUp")
             if levelUp and levelUp.Visible then
                 levelUp.Visible = false
@@ -321,7 +324,6 @@ local function updateLogData()
         local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-        -- 🛡️ ระบบส่งข้อมูลอัจฉริยะ (ส่งเมื่อเงินเพิ่ม หรือ ครบเวลา Force Update)
         if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
             local payload = { 
                 device = CONFIG.DeviceName, 
@@ -334,7 +336,6 @@ local function updateLogData()
             }
             local jsonPayload = HttpService:JSONEncode(payload)
             
-            -- 🔴 รหัสผ่านลับสำหรับทะลวง Ngrok Warning Page
             local headers = {
                 ["Content-Type"] = "application/json",
                 ["ngrok-skip-browser-warning"] = "true" 
@@ -348,7 +349,6 @@ local function updateLogData()
                     Body = jsonPayload
                 })
             else
-                -- Fallback สำหรับบาง Executor
                 HttpService:PostAsync(
                     CONFIG.Url, 
                     jsonPayload, 
@@ -372,7 +372,7 @@ task.spawn(function()
     DebugLog("🚀 System Started (Ngrok Bypass Mode)")
     while true do 
         task.spawn(updateLogData)
-        task.wait(1) -- สแกนเช็คหน้าจอทุกๆ 1 วินาที
+        task.wait(1) 
     end
 end)
 
@@ -801,7 +801,7 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.5 ล้วน (ป้องกันการทับกันตอน Spam รัวๆ)
+        -- 📌 ระยะสุ่ม 1.5 ล้วน (แก้การกระจุกตัวตอน Spam)
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
@@ -914,7 +914,7 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 ANTI-STUCK VERSION)
 -- ==========================================
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -947,11 +947,48 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚀 สุ่มกล่องเสร็จ ไม่มีการ return บังคับให้มันไหลลงไปวาร์ปต่อ
-            if shouldRoll and seedsAmount >= 8500 then
-                DebugLog("🎰 [LOBBY] เงินมี " .. tostring(seedsAmount) .. " (เป้า 8500) กำลังสุ่มกล่อง Tropical 10 กล่อง...")
-                rf.BuyUnitBox:InvokeServer("ub_tropical", 10)
-                task.wait(8) 
+            -- 🚀 อัปเกรดระบบสุ่ม Gacha: สุ่มจนกว่าจะได้ หรือเงินจะหมด + เช็ค Timeout กันค้าง!
+            if shouldRoll and seedsAmount >= 850 then
+                DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มแบบต่อเนื่อง!")
+                local lastGachaSeeds = seedsAmount
+                local stuckTimer = tick()
+
+                while true do
+                    local currentSeedsText = "0"
+                    pcall(function() currentSeedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+                    local currentSeeds = SafeNum(currentSeedsText)
+                    
+                    local _, _, needRoll = GetRoutingPlan()
+                    if not needRoll then
+                        DebugLog("🎉 [GACHA] ได้ตัวที่ต้องการแล้ว! หยุดการสุ่ม!")
+                        break
+                    end
+
+                    -- 🛑 ระบบดักจับการค้าง (ถ้าเวลาผ่านไป 15 วิแล้วเงินไม่ลด = สุ่มพัง)
+                    if currentSeeds == lastGachaSeeds then
+                        if tick() - stuckTimer > 15 then
+                            DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด น่าจะค้าง! เตะตัวเองไปฟาร์มต่อ!")
+                            break
+                        end
+                    else
+                        -- ถ้าเงินลด แสดงว่าสุ่มสำเร็จ ให้รีเซ็ตเวลาใหม่
+                        lastGachaSeeds = currentSeeds
+                        stuckTimer = tick()
+                    end
+                    
+                    if currentSeeds >= 8500 then
+                        DebugLog("🎰 สุ่มกล่อง Tropical แบบ 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        pcall(function() rf.BuyUnitBox:InvokeServer("ub_tropical", 10) end)
+                        task.wait(5.5)
+                    elseif currentSeeds >= 850 then
+                        DebugLog("🎰 สุ่มกล่อง Tropical แบบ 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                        pcall(function() rf.BuyUnitBox:InvokeServer("ub_tropical", 1) end)
+                        task.wait(2.5)
+                    else
+                        DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
+                        break
+                    end
+                end
             else
                 local pads = {85.05, 97.05, 109.05, 121.05}
                 local pID = math.random(5, 8)
