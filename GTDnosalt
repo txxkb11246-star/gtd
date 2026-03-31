@@ -120,38 +120,46 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
+-- 🚀 อัปเกรด Logic การเลือกเส้นทาง (แก้ไขบัคมี Raff แล้วไม่ยอมสุ่ม Lawn)
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
-    local shouldRollGacha = false
+    local shouldRollGacha = not hasLawn -- ตราบใดที่ไม่มี Lawn ถือว่าต้องสุ่มเสมอ!
 
-    if CONFIG.SelectMap == "AutoSeed" then
-        if hasRaff then
-            targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
-        elseif hasLawn then
-            targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = false 
-        else
-            targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
-        end
-    elseif CONFIG.SelectMap == "AutoGem" then
+    if CONFIG.SelectMap == "AutoSeed" or CONFIG.SelectMap == "BGarden" then
         if hasLawn then
-            targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = false 
+            targetMapName = "map_back_garden"
+            farmUnit = "Lawnmower"
+            shouldRollGacha = false
+        elseif hasRaff then
+            targetMapName = "map_christmas"
+            farmUnit = "Rafflesia"
         else
-            targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
+            targetMapName = "map_farm"
+            farmUnit = "Tomato"
+        end
+    elseif CONFIG.SelectMap == "AutoGem" or CONFIG.SelectMap == "Space" then
+        if hasLawn then
+            targetMapName = "map_space"
+            farmUnit = "Lawnmower"
+            shouldRollGacha = false
+        elseif hasRaff then
+            targetMapName = "map_christmas"
+            farmUnit = "Rafflesia"
+        else
+            targetMapName = "map_farm"
+            farmUnit = "Tomato"
         end
     elseif CONFIG.SelectMap == "Ice" then
-        targetMapName = "map_christmas"
-        if hasRaff then farmUnit = "Rafflesia" elseif hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
-        shouldRollGacha = not hasRaff
-    elseif CONFIG.SelectMap == "Space" then
-        targetMapName = "map_space"
-        if hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
-        shouldRollGacha = not hasLawn
-    elseif CONFIG.SelectMap == "BGarden" then
-        targetMapName = "map_back_garden"
-        if hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
-        shouldRollGacha = not hasLawn
+        shouldRollGacha = not hasRaff -- ถ้าเล่นแค่ Ice ก็สุ่มหาแค่ Raff
+        if hasRaff then
+            targetMapName = "map_christmas"
+            farmUnit = "Rafflesia"
+        else
+            targetMapName = "map_farm"
+            farmUnit = "Tomato"
+        end
     end
 
     return targetMapName, farmUnit, shouldRollGacha
@@ -912,7 +920,7 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 ANTI-STUCK VERSION)
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 FIXED PRIORITY)
 -- ==========================================
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -926,7 +934,7 @@ local function StartLobbyMasterEngine()
                 task.wait(2) 
             end
 
-            -- 🛑 อัปเกรด: รอให้ตัวเลขเงินโหลดเสร็จก่อนค่อยทำงาน (กันบัคอ่านค่าได้ 0)
+            -- 🛑 รอให้ตัวเลขเงินโหลดเสร็จก่อนค่อยทำงาน (กันบัคอ่านค่าได้ 0)
             local seedsAmount = 0
             for i = 1, 10 do
                 local seedsText = "0"
@@ -938,24 +946,22 @@ local function StartLobbyMasterEngine()
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-            -- 🟢 ระบบฉีดคำสั่งซื้อ Rafflesia ฉุกเฉิน (ยิงไปเลยไม่ต้องสนเงินพอไหม!)
+            -- 🟢 ระบบฉีดคำสั่งซื้อ Rafflesia ฉุกเฉิน (ยิงคำสั่ง 1 ครั้ง ไม่เช็คเงิน!)
             local lastRaffBuy = getgenv().LastRaffBuy or 0
             if not hasRaff and (tick() - lastRaffBuy > 15) then
                 getgenv().LastRaffBuy = tick()
-                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! ยิงคำสั่งซื้อฉุกเฉิน 2 ครั้ง (เงินพอไม่พอช่างมัน!)")
-                for i = 1, 2 do
-                    pcall(function()
-                        local args = { "normal", 300, "300-3" }
-                        local result
-                        if game:FindFirstChild("WTBuyItem") then
-                            result = game.WTBuyItem:InvokeServer(unpack(args))
-                        else
-                            result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
-                        end
-                        DebugLog("🛒 Buy Result " .. tostring(i) .. ": " .. tostring(result))
-                    end)
-                    task.wait(0.5)
-                end
+                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! ยิงคำสั่งซื้อฉุกเฉิน 1 ครั้ง (เงินพอไม่พอช่างมัน!)")
+                pcall(function()
+                    local args = { "normal", 300, "300-3" }
+                    local result
+                    if game:FindFirstChild("WTBuyItem") then
+                        result = game.WTBuyItem:InvokeServer(unpack(args))
+                    else
+                        result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
+                    end
+                    DebugLog("🛒 Buy Result: " .. tostring(result))
+                end)
+                task.wait(0.5)
                 hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋าใหม่หลังซื้อ
             end
             
