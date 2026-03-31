@@ -120,12 +120,10 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
--- 🚀 Logic การเลือกเส้นทาง
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
-    local shouldRollGacha = not hasLawn
 
     if CONFIG.SelectMap == "AutoSeed" then
         if hasRaff then
@@ -134,7 +132,6 @@ local function GetRoutingPlan()
         elseif hasLawn then
             targetMapName = "map_back_garden"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -143,7 +140,6 @@ local function GetRoutingPlan()
         if hasLawn then
             targetMapName = "map_space"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -152,7 +148,6 @@ local function GetRoutingPlan()
         if hasLawn then
             targetMapName = "map_back_garden"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -161,7 +156,6 @@ local function GetRoutingPlan()
         if hasLawn then
             targetMapName = "map_space"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -176,10 +170,9 @@ local function GetRoutingPlan()
         end
     end
 
-    return targetMapName, farmUnit, shouldRollGacha
+    return targetMapName, farmUnit
 end
 
--- 🚀 ถอนตัวกลับ Lobby
 local function CheckAndGoLobbyIfRich()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local seedsText = "0"
@@ -332,7 +325,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [4] AFK & WEBHOOK LOG (🚀 NGROK BYPASS)
+-- [4] AFK & WEBHOOK LOG
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -414,7 +407,7 @@ local function updateLogData()
 end
 
 task.spawn(function()
-    DebugLog("🚀 System Started (Ngrok Bypass Mode)")
+    DebugLog("🚀 System Started")
     while true do 
         task.spawn(updateLogData)
         task.wait(1) 
@@ -966,7 +959,7 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 ULTIMATE STANDALONE)
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 HINA GACHA STANDALONE)
 -- ==========================================
 
 local function executeAutoBuyRaff()
@@ -981,7 +974,7 @@ local function executeAutoBuyRaff()
         local lastRaffBuy = getgenv().LastRaffBuy or 0
         if tick() - lastRaffBuy > 15 then
             getgenv().LastRaffBuy = tick()
-            DebugLog("🛒 [SHOP] ตังค์พอแล้ว (75k+)! ไม่พบ Rafflesia สแกนหา Remote ยิงซื้อ 1 ครั้ง...")
+            DebugLog("🛒 [SHOP] ตังค์พอแล้ว (75k+)! สแกนหา Remote ยิงซื้อ 1 ครั้ง...")
             
             local buyRemote = nil
             pcall(function() buyRemote = game.WTBuyItem end)
@@ -1028,7 +1021,7 @@ local function executeAutoRollLawn()
     
     if not BuyFunction or not BanEvent then return end
 
-    -- 🚫 ระบบแบนยูนิตขยะ (ห้ามแบน Lawnmower เด็ดขาด!)
+    -- 🚫 ระบบแบนยูนิตขยะ (ลบ Lawnmower ออกจากรายการแบนแล้ว!)
     local bannedUnits = {"unit_radish", "unit_scarecrow", "unit_kiwi_cannon", "unit_grandma", "unit_umbra", "unit_stun_flower"}
     DebugLog("🚫 กำลังแบนยูนิตเกลือในตู้ " .. CONFIG.BoxName .. " ...")
     for _, uName in ipairs(bannedUnits) do
@@ -1037,9 +1030,6 @@ local function executeAutoRollLawn()
         end)
     end
     task.wait(4) -- รอเซิร์ฟเวอร์อัปเดตแบน
-
-    local stuckTimer = tick()
-    local lastGachaSeeds = seedsAmount
 
     DebugLog("🎲 เริ่มลูปสุ่ม Fast Async Roll x5...")
     while true do
@@ -1055,16 +1045,6 @@ local function executeAutoRollLawn()
         if currentSeeds < 850 then
             DebugLog("💸 เงินหมดแล้ว! กลับไปฟาร์มต่อ!")
             break
-        end
-
-        if currentSeeds == lastGachaSeeds then
-            if tick() - stuckTimer > 25 then
-                DebugLog("⚠️ [GACHA TIMEOUT] สุ่ม 25 วิแล้วเงินไม่ลด เตะตัวเองไปฟาร์ม!")
-                break
-            end
-        else
-            lastGachaSeeds = currentSeeds
-            stuckTimer = tick()
         end
 
         local rollAmount = (currentSeeds >= 8500) and 10 or 1
@@ -1102,14 +1082,11 @@ local function StartLobbyMasterEngine()
                 task.wait(1)
             end
 
-            -- 🟢 1. บังคับยิงซื้อ Rafflesia (ในทุก Config)
+            -- 🟢 1. บังคับยิงซื้อ Rafflesia (ถ้าขาด)
             executeAutoBuyRaff()
             
-            -- 🚀 2. บังคับสุ่ม Lawnmower (ในทุก Config ถ้าตังค์พอ)
-            local _, currLawn = GetTrueOwnedInventory()
-            if not currLawn then
-                executeAutoRollLawn()
-            end
+            -- 🚀 2. บังคับสุ่ม Lawnmower (ถ้าขาด)
+            executeAutoRollLawn()
             
             -- 🗺️ 3. คำนวณหาแมพที่จะเล่น
             local targetMapName, plan, _ = GetRoutingPlan()
