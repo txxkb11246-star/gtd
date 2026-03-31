@@ -946,23 +946,29 @@ local function StartLobbyMasterEngine()
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-            -- 🟢 ระบบฉีดคำสั่งซื้อ Rafflesia ฉุกเฉิน (ยิงคำสั่ง 1 ครั้ง ไม่เช็คเงิน!)
+            -- 🟢 ระบบซื้อ Raff อัตโนมัติ (Robust System: ยิงคำสั่งซื้อ 1 ครั้ง)
             local lastRaffBuy = getgenv().LastRaffBuy or 0
             if not hasRaff and (tick() - lastRaffBuy > 15) then
                 getgenv().LastRaffBuy = tick()
-                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! ยิงคำสั่งซื้อฉุกเฉิน 1 ครั้ง (เงินพอไม่พอช่างมัน!)")
-                pcall(function()
+                DebugLog("🛒 [SHOP] ไม่พบ Rafflesia! กำลังยิงคำสั่งซื้อ (Robust System)...")
+                
+                local success, err = pcall(function()
                     local args = { "normal", 300, "300-3" }
-                    local result
-                    if game:FindFirstChild("WTBuyItem") then
-                        result = game.WTBuyItem:InvokeServer(unpack(args))
-                    else
-                        result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
-                    end
-                    DebugLog("🛒 Buy Result: " .. tostring(result))
+                    local result = game.WTBuyItem:InvokeServer(unpack(args))
+                    DebugLog("🎟️ ซื้อ Raff สำเร็จ! ผลลัพธ์: " .. tostring(result))
                 end)
-                task.wait(0.5)
-                hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋าใหม่หลังซื้อ
+                
+                if not success then
+                    DebugLog("⚠️ ไม่พบ WTBuyItem ใน game ลองค้นหาใน ReplicatedStorage...")
+                    pcall(function()
+                        local args = { "normal", 300, "300-3" }
+                        local result = ReplicatedStorage.WTBuyItem:InvokeServer(unpack(args))
+                        DebugLog("🎟️ ซื้อ Raff (สำรอง) สำเร็จ! ผลลัพธ์: " .. tostring(result))
+                    end)
+                end
+                
+                task.wait(1)
+                hasRaff, hasLawn = GetTrueOwnedInventory() -- อัปเดตกระเป๋าใหม่
             end
             
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
