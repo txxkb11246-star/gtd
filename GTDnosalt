@@ -120,32 +120,30 @@ local function GetTrueOwnedInventory()
     return hasRaff, hasLawn
 end
 
+-- 🚀 อัปเกรด Logic การเลือกเส้นทาง (เป๊ะตามคำขอ)
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
     local shouldRollGacha = not hasLawn -- บังคับสุ่ม Lawn ในทุกคอนฟิคถ้ายังไม่มี
 
-    if CONFIG.SelectMap == "AutoSeed" or CONFIG.SelectMap == "BGarden" then
-        if hasLawn then
+    if CONFIG.SelectMap == "AutoSeed" then
+        if hasRaff then
+            targetMapName = "map_christmas"
+            farmUnit = "Rafflesia"
+        elseif hasLawn then
             targetMapName = "map_back_garden"
             farmUnit = "Lawnmower"
             shouldRollGacha = false
-        elseif hasRaff then
-            targetMapName = "map_christmas"
-            farmUnit = "Rafflesia"
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
         end
-    elseif CONFIG.SelectMap == "AutoGem" or CONFIG.SelectMap == "Space" then
+    elseif CONFIG.SelectMap == "AutoGem" then
         if hasLawn then
             targetMapName = "map_space"
             farmUnit = "Lawnmower"
             shouldRollGacha = false
-        elseif hasRaff then
-            targetMapName = "map_christmas"
-            farmUnit = "Rafflesia"
         else
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -158,9 +156,64 @@ local function GetRoutingPlan()
             targetMapName = "map_farm"
             farmUnit = "Tomato"
         end
+    elseif CONFIG.SelectMap == "Space" then
+        if hasLawn then
+            targetMapName = "map_space"
+            farmUnit = "Lawnmower"
+            shouldRollGacha = false
+        else
+            targetMapName = "map_farm"
+            farmUnit = "Tomato"
+        end
+    elseif CONFIG.SelectMap == "BGarden" then
+        if hasLawn then
+            targetMapName = "map_back_garden"
+            farmUnit = "Lawnmower"
+            shouldRollGacha = false
+        else
+            targetMapName = "map_farm"
+            farmUnit = "Tomato"
+        end
     end
 
     return targetMapName, farmUnit, shouldRollGacha
+end
+
+-- 🚀 อัปเกรดระบบถอนตัวกลับ Lobby (เช็คทั้ง Raff และ Lawn)
+local function CheckAndGoLobbyIfRich()
+    local hasRaff, hasLawn = GetTrueOwnedInventory()
+    local seedsText = "0"
+    pcall(function() seedsText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+    local seedsAmount = SafeNum(seedsText)
+    
+    local shouldGoLobby = false
+    local reason = ""
+
+    -- เช็คว่าจำเป็นต้องแวะ Lobby ไหม
+    if not hasRaff and seedsAmount >= 75000 then
+        shouldGoLobby = true
+        reason = "ไปซื้อ Rafflesia (75k)"
+    elseif not hasLawn and seedsAmount >= 8500 then
+        shouldGoLobby = true
+        reason = "ไปสุ่ม Lawnmower (8.5k)"
+    end
+
+    if shouldGoLobby then
+        DebugLog("💰 [SEED CHECK] เงินถึงเกณฑ์! บังคับกลับ Lobby " .. reason)
+        pcall(function() 
+            local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
+            if rf then
+                if rf:FindFirstChild("ReturnToLobby") then rf.ReturnToLobby:InvokeServer() end
+                if rf:FindFirstChild("LeaveGame") then rf.LeaveGame:InvokeServer() end
+            end
+        end)
+        task.wait(1.5)
+        pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
+        task.wait(9e9) 
+        return true
+    end
+    
+    return false
 end
 
 -- ==========================================
@@ -440,7 +493,7 @@ local function TripleLayerEquip(shortName, fullName)
 
     task.wait(1.5)
     if IsInHotbar(shortName) then 
-        DebugLog("✅ [EQUIP] สวมใส่ " .. shortName .. " สำเร็จ!")
+        DebugLog("✅ [EQUIP] สวมใส่ " .. shortName .. " ด้วย Remote สำเร็จ!")
         return true 
     end
     
@@ -567,7 +620,9 @@ local function RunIceFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -634,7 +689,9 @@ local function RunSpaceFarmMaster()
     while true do
         runSpaceSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -726,7 +783,9 @@ local function RunTomatoFarmMaster()
     while true do
         runTomatoSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -774,7 +833,7 @@ local function RunBGardenFarmMaster()
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
         
-        -- 📌 ระยะสุ่ม 1.5 ล้วน 
+        -- 📌 ระยะสุ่ม 1.5 ล้วน (แก้การกระจุกตัวตอน Spam)
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
@@ -879,7 +938,9 @@ local function RunBGardenFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        if not CheckAndGoLobbyIfRich() then
+            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+        end
         task.wait(3)
     end
 end
@@ -911,7 +972,7 @@ local function StartLobbyMasterEngine()
 
             local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-            -- 🟢 1. เช็คกระเป๋า ถ้าไม่มี Raff ให้ยิงซื้อ 1 ครั้ง (ใช้ระบบ Hunter Scan)
+            -- 🟢 1. เช็คกระเป๋า ถ้าไม่มี Raff ให้ยิงซื้อ 1 ครั้ง (ใช้ระบบ Hunter Scan ทุก Config)
             local lastRaffBuy = getgenv().LastRaffBuy or 0
             if not hasRaff and (tick() - lastRaffBuy > 15) then
                 getgenv().LastRaffBuy = tick()
@@ -947,7 +1008,7 @@ local function StartLobbyMasterEngine()
             
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
-            -- ใส่ของ
+            -- ใส่ของเตรียมวาร์ป
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 if plan == "Rafflesia" then TripleLayerEquip("Rafflesia", "unit_rafflesia")
@@ -961,61 +1022,66 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚀 2. สุ่ม Gacha Lawnmower จนกว่าจะได้หรือเงินหมดตู้
-            if shouldRoll and seedsAmount >= 850 then
-                DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มหา Lawnmower แบบต่อเนื่อง!")
-                local lastGachaSeeds = seedsAmount
-                local stuckTimer = tick()
+            -- 🚀 2. สุ่ม Gacha Lawnmower จนกว่าจะได้หรือจนกว่าตู้จะบอกว่าตังค์ไม่พอ
+            if shouldRoll then
+                if seedsAmount >= 850 then
+                    DebugLog("🎰 [GACHA MODE] เริ่มต้นการสุ่มหา Lawnmower แบบต่อเนื่อง!")
+                    local lastGachaSeeds = seedsAmount
+                    local stuckTimer = tick()
 
-                while true do
-                    local currentSeedsText = "0"
-                    pcall(function() currentSeedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
-                    local currentSeeds = SafeNum(currentSeedsText)
-                    
-                    local _, _, needRoll = GetRoutingPlan()
-                    if not needRoll then
-                        DebugLog("🎉 [GACHA] ได้ Lawnmower แล้ว! หยุดการสุ่ม!")
-                        break
-                    end
-
-                    -- 🛑 กันค้างสุ่ม
-                    if currentSeeds == lastGachaSeeds then
-                        if tick() - stuckTimer > 15 then
-                            DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด เตะตัวเองไปฟาร์มต่อ!")
+                    while true do
+                        local currentSeedsText = "0"
+                        pcall(function() currentSeedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+                        local currentSeeds = SafeNum(currentSeedsText)
+                        
+                        -- ถ้าสุ่มได้ Lawn แล้ว ให้พัง Loop ทันที
+                        local currentHasRaff, currentHasLawn = GetTrueOwnedInventory()
+                        if currentHasLawn then
+                            DebugLog("🎉 [GACHA] ได้ Lawnmower แล้วโว้ย! หยุดการสุ่ม!")
                             break
                         end
-                    else
-                        lastGachaSeeds = currentSeeds
-                        stuckTimer = tick()
+
+                        -- 🛑 กันค้างสุ่ม
+                        if currentSeeds == lastGachaSeeds then
+                            if tick() - stuckTimer > 15 then
+                                DebugLog("⚠️ [GACHA TIMEOUT] สุ่มไปแล้ว 15 วินาทีแต่เงินไม่ลด เตะตัวเองไปฟาร์มต่อ!")
+                                break
+                            end
+                        else
+                            lastGachaSeeds = currentSeeds
+                            stuckTimer = tick()
+                        end
+                        
+                        if currentSeeds >= 8500 then
+                            DebugLog("🎰 สุ่มกล่อง 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                            pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
+                            task.wait(5.5)
+                        elseif currentSeeds >= 850 then
+                            DebugLog("🎰 สุ่มกล่อง 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
+                            pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
+                            task.wait(2.5)
+                        else
+                            DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
+                            break
+                        end
                     end
-                    
-                    if currentSeeds >= 8500 then
-                        DebugLog("🎰 สุ่มกล่อง 10 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                        pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 10) end)
-                        task.wait(5.5)
-                    elseif currentSeeds >= 850 then
-                        DebugLog("🎰 สุ่มกล่อง 1 ครั้ง! (เงิน: " .. tostring(currentSeeds) .. ")")
-                        pcall(function() rf.BuyUnitBox:InvokeServer(CONFIG.BoxName, 1) end)
-                        task.wait(2.5)
-                    else
-                        DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. tostring(currentSeeds) .. ") กลับไปฟาร์มต่อ!")
-                        break
-                    end
+                else
+                    DebugLog("⚠️ เงินไม่พอสุ่ม Lawn (ต้องการ 850 แต่มี " .. tostring(seedsAmount) .. ")")
                 end
-            else
-                -- 🚶 3. เดินไปวาร์ปเข้าด่าน
-                local pads = {85.05, 97.05, 109.05, 121.05}
-                local pID = math.random(5, 8)
-                
-                if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-                    DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
-                    LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
-                    task.wait(5.5) 
-                    rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
-                    task.wait(1.5)
-                    for i = 3, 1, -1 do rf["LobbySetMaxPlayers_" .. pID]:InvokeServer(i); task.wait(0.7) end
-                    task.wait(10)
-                end
+            end
+
+            -- 🚶 3. สุ่มจบ/ซื้อจบ/เงินหมด ➡️ เดินไปวาร์ปเข้าด่าน
+            local pads = {85.05, 97.05, 109.05, 121.05}
+            local pID = math.random(5, 8)
+            
+            if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+                DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
+                LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
+                task.wait(5.5) 
+                rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
+                task.wait(1.5)
+                for i = 3, 1, -1 do rf["LobbySetMaxPlayers_" .. pID]:InvokeServer(i); task.wait(0.7) end
+                task.wait(10)
             end
         end)
         task.wait(1)
