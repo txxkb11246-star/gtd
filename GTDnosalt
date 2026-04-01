@@ -82,21 +82,25 @@ end)
 -- [2] GLOBAL UTILITIES & SMART ROUTING
 -- ==========================================
 
--- 💵 ฟังก์ชันอ่านเงินแบบเจาะจงเป๊ะๆ ป้องกันการอ่าน UI ซ่อน
-local function GetCurrency(currType)
+-- 💵 ฟังก์ชันอ่านเงินแบบโคตรชัวร์ ปลดล็อคปาก Debug ให้แจ้งเตือนถ้าพัง
+local function GetExactSeeds()
     local val = 0
-    pcall(function()
-        local gui = LP.PlayerGui:FindFirstChild("GameGui")
-        if not gui then return end
+    local success, err = pcall(function()
+        local title = LP.PlayerGui:FindFirstChild("SeedsDisplay", true)
         
-        local screen = gui:FindFirstChild("Screen")
-        local bottom = screen and screen:FindFirstChild("Bottom")
-        local currencyDisplay = bottom and bottom:FindFirstChild("CurrencyDisplay")
-        if not currencyDisplay then return end
-        
-        local targetDisplay = (currType == "Seed") and currencyDisplay:FindFirstChild("SeedsDisplay") or currencyDisplay:FindFirstChild("SpaceGemsDisplay")
-        if targetDisplay and targetDisplay:FindFirstChild("Title") then
-            local txt = string.gsub(targetDisplay.Title.Text, ",", "")
+        -- Backup Path: เจาะลงไปที่ลึกที่สุดถ้าหาแบบ Global ไม่เจอ
+        if not title then
+            local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
+            if gameGui and gameGui:FindFirstChild("Screen") and gameGui.Screen:FindFirstChild("Bottom") then
+                local currencyDisplay = gameGui.Screen.Bottom:FindFirstChild("CurrencyDisplay")
+                if currencyDisplay and currencyDisplay:FindFirstChild("SeedsDisplay") then
+                    title = currencyDisplay.SeedsDisplay:FindFirstChild("Title")
+                end
+            end
+        end
+
+        if title then
+            local txt = string.gsub(title.Text, ",", "")
             txt = string.gsub(txt, " ", "")
             local numStr, suffix = string.match(string.lower(txt), "([%d%.]+)([kmb]?)")
             if numStr then
@@ -109,6 +113,11 @@ local function GetCurrency(currType)
             end
         end
     end)
+    
+    if not success then 
+        DebugLog("❌ [ERROR] ฟังก์ชันอ่านเงินทำงานล้มเหลว: " .. tostring(err)) 
+    end
+    
     return math.floor(val)
 end
 
@@ -180,39 +189,32 @@ local function GetRoutingPlan()
     return targetMapName, farmUnit
 end
 
--- 🚀 ถอนตัวกลับ Lobby แบบทันที (Instant Return กลางด่าน)
+-- 🚀 ถอนตัวกลับ Lobby ด้วยการบังคับ Hop! (Force Teleport)
 local isGoingLobby = false
-local function CheckAndGoLobbyIfRich()
+local function CheckAndForceHopIfRich()
     if isGoingLobby then return true end
 
     local hasRaff, hasLawn = GetTrueOwnedInventory()
-    local seedsAmount = GetCurrency("Seed")
+    local seedsAmount = GetExactSeeds()
     
-    local shouldGoLobby = false
+    local shouldHop = false
     local reason = ""
 
     if not hasRaff and seedsAmount >= 75000 then
-        shouldGoLobby = true
+        shouldHop = true
         reason = "ไปซื้อ Rafflesia (75k+)"
-    elseif not hasLawn and seedsAmount >= 3500 then
-        -- 🔥 ถึง 3500 ปุ๊บ เด้งกลับเลย!
-        shouldGoLobby = true
-        reason = "ไปสุ่ม Lawnmower (3500+)"
+    elseif not hasLawn and seedsAmount >= 8500 then
+        -- 🔥 ถึง 8500 ปุ๊บ เด้งกลับเลย!
+        shouldHop = true
+        reason = "ไปสุ่ม Lawnmower (8500+)"
     end
 
-    if shouldGoLobby then
+    if shouldHop then
         isGoingLobby = true
-        DebugLog("💰 [SEED CHECK] เงินแตะ " .. tostring(seedsAmount) .. " บังคับเตะกลับ Lobby ทันที: " .. reason)
-        pcall(function() 
-            local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
-            if rf then
-                if rf:FindFirstChild("ReturnToLobby") then rf.ReturnToLobby:InvokeServer() end
-                if rf:FindFirstChild("LeaveGame") then rf.LeaveGame:InvokeServer() end
-            end
-        end)
-        task.wait(1.5)
+        DebugLog("💰 [SEED CHECK] เงินแตะ " .. tostring(seedsAmount) .. " บังคับเตะกลับ Lobby (HOP) ทันที: " .. reason)
+        -- 🛑 ใช้ Teleport ล้วนๆ ไม่ใช้ Remote เกมเพื่อความเฉียบขาด
         pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
-        task.wait(9e9) 
+        task.wait(9e9) -- หยุดสคริปต์ส่วนอื่นทั้งหมด
         return true
     end
     
@@ -235,8 +237,8 @@ local function StartGameEndMonitor(isEndTable)
                     end
                 end
                 
-                -- 🔴 ตรวจสอบยอดเงินทุกๆ 0.5 วิ 
-                if CheckAndGoLobbyIfRich() then
+                -- 🔴 ตรวจสอบยอดเงินทุกๆ 0.5 วิ ถ้าถึงเกณฑ์เด้งออกทันที 🔴
+                if CheckAndForceHopIfRich() then
                     isEndTable.value = true
                 end
             end)
@@ -379,8 +381,10 @@ local function updateLogData()
     if not LP.PlayerGui:FindFirstChild("GameGui") then return end
     
     local success, err = pcall(function()
-        local seedsAmount = GetCurrency("Seed")
-        local gemsAmount = GetCurrency("Gem")
+        local seedsAmount = GetExactSeeds()
+        local gemText = "0"
+        pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
+        local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
         if seedsAmount > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
@@ -413,6 +417,7 @@ local function updateLogData()
             lastS, lastG, lastT = seedsAmount, gemsAmount, tick()
         end
     end)
+    if not success then DebugLog("❌ [WEBHOOK ERROR] " .. tostring(err)) end
 end
 
 task.spawn(function()
@@ -666,7 +671,7 @@ local function RunIceFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        if not CheckAndGoLobbyIfRich() then
+        if not CheckAndForceHopIfRich() then
             for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
         end
         task.wait(3)
@@ -732,7 +737,7 @@ local function RunSpaceFarmMaster()
     while true do
         runSpaceSession()
         task.wait(3)
-        if not CheckAndGoLobbyIfRich() then
+        if not CheckAndForceHopIfRich() then
             for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
         end
         task.wait(3)
@@ -740,7 +745,7 @@ local function RunSpaceFarmMaster()
 end
 
 -- ==========================================
--- [8] TOMATO FARM ENGINE
+-- [8] TOMATO FARM ENGINE (🟢 FIXED UPGRADE)
 -- ==========================================
 local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -797,7 +802,7 @@ local function RunTomatoFarmMaster()
             if isEnd.value then break end
             local b = bases[i]
             local uID = nil
-            local timeout = tick() + 5 
+            local timeout = tick() + 15 -- 🟢 ขยายเวลารอวางตัวเป็น 15 วิ (เผื่อเซิร์ฟเวอร์ช้า)
             
             repeat
                 if isEnd.value then break end
@@ -808,10 +813,13 @@ local function RunTomatoFarmMaster()
             until uID or isEnd.value or tick() > timeout
             
             if uID then
-                waitCash(125, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end) end
-                waitCash(175, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end) end
-                waitCash(350, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end) end
-                waitCash(500, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end) end
+                DebugLog("🍅 วาง Tomato ต้นที่ " .. tostring(i) .. " สำเร็จ (ID: " .. tostring(uID) .. ")")
+                waitCash(125, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end); DebugLog("⬆️ อัพเกรดขั้น 1") end
+                waitCash(175, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end); DebugLog("⬆️ อัพเกรดขั้น 2") end
+                waitCash(350, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end); DebugLog("⬆️ อัพเกรดขั้น 3") end
+                waitCash(500, isEnd); if not isEnd.value then pcall(function() rf.UpgradeUnit:InvokeServer(uID) end); DebugLog("⬆️ อัพเกรด MAX") end
+            else
+                DebugLog("❌ หมดเวลารอวาง Tomato ต้นที่ " .. tostring(i) .. " ข้ามไปจุดต่อไป!")
             end
             task.wait(0.2)
         end
@@ -822,7 +830,7 @@ local function RunTomatoFarmMaster()
     while true do
         runTomatoSession()
         task.wait(3)
-        if not CheckAndGoLobbyIfRich() then
+        if not CheckAndForceHopIfRich() then
             for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
         end
         task.wait(3)
@@ -960,7 +968,7 @@ local function RunBGardenFarmMaster()
     while true do
         runSession()
         task.wait(3)
-        if not CheckAndGoLobbyIfRich() then
+        if not CheckAndForceHopIfRich() then
             for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
         end
         task.wait(3)
