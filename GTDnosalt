@@ -608,69 +608,145 @@ local function StartAutoSkip(restartSignalTable)
 end
 
 -- ==========================================
--- [6] ICE FARM ENGINE
+-- [6] ICE FARM ENGINE (🚨 4 STRATEGIC SENSORS 🚨)
 -- ==========================================
 local function RunIceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     
     TripleLayerEquip("Rafflesia", "unit_rafflesia")
     
-    local DATA = {
-        P1 = { pos = Vector3.new(109.221, 1.244, -94.994), dist = 8.628, cf = CFrame.new(109.221, 1.244, -94.994, 0.9242, 0, -0.3819, 0, 1, 0, 0.3819, 0, 0.9242) },
-        P2 = { pos = Vector3.new(111.705, 1.244, 108.034), dist = 9.182, cf = CFrame.new(111.705, 1.244, 108.034, -0.9242, 0, -0.3819, 0, 1, 0, 0.3819, 0, -0.9242) },
-        P3 = { pos = Vector3.new(-104.770, 1.244, 91.557), dist = 6.353, cf = CFrame.new(-104.770, 1.244, 91.557, -0.3819, 0, 0.9242, 0, 1, 0, -0.9242, 0, -0.3819) },
-        P4_NEW = { pos = Vector3.new(-81.38597, 1.244, -73.915), dist = 66.999, cf = CFrame.new(-81.38597, 1.244, -73.915, 0.9802, 0, -0.1975, 0, 1, 0, 0.1975, 0, 0.9802) },
-        P4_OLD = { pos = Vector3.new(-80.166, 1.244, -123.141), dist = 9.321, cf = CFrame.new(-80.166, 1.244, -123.141, 0.3792, 0, 0.9253, 0, 1, 0, -0.9253, 0, 0.3792) }
+    local TRAPS = {
+        { path = 2, dist = 165.141742, pos = Vector3.new(24.4693069, 1.24399996, 17.5998173), cf = CFrame.new(24.4693069, 1.24399996, 17.5998173, 0, 0, -1, 0, 1, 0, 1, 0, 0) },
+        { path = 3, dist = 157.989111, pos = Vector3.new(-31.5937195, 1.24422872, 17.3192806), cf = CFrame.new(-31.5937195, 1.24422872, 17.3192806, 0.196482971, 0.000116901079, 0.980507255, 0, 1, -0.000119225107, -0.980507255, 2.34257041e-05, 0.196482971) },
+        { path = 1, dist = 165.985503, pos = Vector3.new(23.251421, 1.24408841, -18.4236031), cf = CFrame.new(23.251421, 1.24408841, -18.4236031, 0.555140376, 9.91713314e-05, -0.831756711, 0, 1.00000012, 0.000119231176, 0.831756711, -6.61900413e-05, 0.555140376) },
+        { path = 4, dist = 165.489744, pos = Vector3.new(-17.587595, 1.24400938, -24.1223202), cf = CFrame.new(-17.587595, 1.24400938, -24.1223202, 0.980873168, -2.32155871e-05, 0.194647983, 0, 1, 0.0001192696, -0.194647983, -0.000116988347, 0.980873168) }
     }
-    
-    local GAME_SPEED = 2
 
-    local function deploy(path, config, waitTime, isEnd)
-        if isEnd.value then return end
-        local finalPos = Vector3.new(config.pos.X + (math.random() * 3 - 1.5), config.pos.Y, config.pos.Z + (math.random() * 3 - 1.5))
-        local finalCF = CFrame.new(finalPos) * (config.cf - config.cf.Position)
-        
-        for i = 1, 3 do
-            if isEnd.value then return end
-            local ok = pcall(function() rf.PlaceUnit:InvokeServer("unit_rafflesia", {Valid = true, PathIndex = path, Position = finalPos, DistanceAlongPath = config.dist, CF = finalCF, Rotation = 180}) end)
-            if ok then break end; task.wait(1)
-        end
-        local start = tick(); while tick() - start < waitTime do if isEnd.value then break end; task.wait(0.5) end
+    local TRAP_RADIUS = 45      
+    local WARN_RADIUS = 50      
+    local COOLDOWN_TIME = 1   
+    local CONE_THRESHOLD = 0.1  
+
+    local TRAP_RADIUS_SQ = TRAP_RADIUS * TRAP_RADIUS
+    local WARN_RADIUS_SQ = WARN_RADIUS * WARN_RADIUS
+
+    local forceRestart = false
+    local hpConnection = nil
+    local sensorConnection = nil
+    local hasAppliedSettings = false
+
+    local function reloadTrap(trapConfig)
+        local ox = (math.random() * 2 - 1) * 1.5
+        local oz = (math.random() * 2 - 1) * 1.5
+        return { "unit_rafflesia", {Valid = true, PathIndex = trapConfig.path, Position = Vector3.new(trapConfig.pos.X + ox, trapConfig.pos.Y, trapConfig.pos.Z + oz), DistanceAlongPath = trapConfig.dist, CF = trapConfig.cf + Vector3.new(ox, 0, oz), Rotation = 180} }
     end
 
     local function runSession()
-        local isEnd = {value = false}
-        StartGameEndMonitor(isEnd)
-        StartAutoSkip(isEnd)
+        forceRestart = false
+        if hpConnection then hpConnection:Disconnect(); hpConnection = nil end
+        if sensorConnection then sensorConnection:Disconnect(); sensorConnection = nil end
+
+        for _, trap in ipairs(TRAPS) do trap.preloaded = nil; trap.nextAttackTime = 0 end
 
         task.spawn(function()
-            pcall(function() rf.ChangeSetting:InvokeServer("st_graphics", 2) end)
-            pcall(function() rf.ChangeTickSpeed:InvokeServer(2) end)
-            task.wait(5); pcall(function() rf.ChangeTickSpeed:InvokeServer(3) end)
+            local map = Workspace:WaitForChild("Map", 60)
+            if map and map:WaitForChild("BaseHP", 60) then
+                hpConnection = map.BaseHP.Changed:Connect(function(val) 
+                    local hp = tonumber(tostring(val):match("[-%d%.]+")) or 100
+                    if hp <= 0 and not forceRestart then 
+                        forceRestart = true
+                    end 
+                end)
+            end
         end)
+        
+        local isEnd = {value = false}
+        task.spawn(function()
+            while not forceRestart do task.wait(0.5) end
+            isEnd.value = true
+        end)
+        StartAutoSkip(isEnd)
+
+        if not hasAppliedSettings then
+            hasAppliedSettings = true
+            task.spawn(function()
+                pcall(function() rf:WaitForChild("ChangeSetting"):InvokeServer("st_graphics", 2) end)
+                pcall(function() rf:WaitForChild("ChangeSetting"):InvokeServer("st_background_music_volume", 1) end)
+                pcall(function() rf:WaitForChild("ChangeSetting"):InvokeServer("st_fx_volume", 1) end)
+                pcall(function() rf:WaitForChild("ChangeTickSpeed"):InvokeServer(2) end)
+            end)
+        end
 
         task.wait(2)
-        pcall(function() rf:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_apocalypse") end)
+        pcall(function() rf:WaitForChild("PlaceDifficultyVote"):InvokeServer("dif_apocalypse") end) 
         task.wait(6)
 
-        if not isEnd.value then
-            deploy(1, DATA.P1, 5.5 * (2 / GAME_SPEED), isEnd)
-            deploy(2, DATA.P2, 10.7 * (2 / GAME_SPEED), isEnd)
-            deploy(3, DATA.P3, 6.8 * (2 / GAME_SPEED), isEnd)
-            deploy(4, DATA.P4_NEW, 50.3 * (2 / GAME_SPEED), isEnd)
-            deploy(3, DATA.P3, 5.5 * (2 / GAME_SPEED), isEnd)
-            deploy(4, DATA.P4_OLD, 0, isEnd)
+        local EntitiesFolder = Workspace:WaitForChild("Map", 60):WaitForChild("Entities", 60)
+        
+        sensorConnection = RunService.Heartbeat:Connect(function()
+            if forceRestart then return end
+            
+            local ct = tick()
+            
+            for _, trap in ipairs(TRAPS) do
+                local kZ = false; local wZ = false
+                local trapForward = trap.cf.LookVector
+                
+                for _, ent in ipairs(EntitiesFolder:GetChildren()) do
+                    if ent.Name ~= "unit_rafflesia" then
+                        local entPos = ent:GetPivot().Position
+                        local offset = (entPos - trap.pos)
+                        local distSq = (offset.X * offset.X) + (offset.Z * offset.Z)
+                        
+                        if distSq <= WARN_RADIUS_SQ then
+                            local dirToEnt = offset.Unit
+                            local dot = trapForward:Dot(dirToEnt)
+                            
+                            if dot >= CONE_THRESHOLD then
+                                if distSq <= TRAP_RADIUS_SQ then 
+                                    kZ = true; break 
+                                else 
+                                    wZ = true 
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if wZ and not trap.preloaded then trap.preloaded = reloadTrap(trap) end
+                
+                if kZ and ct >= trap.nextAttackTime then
+                    if not trap.preloaded then trap.preloaded = reloadTrap(trap) end
+                    local bullet = trap.preloaded
+                    trap.preloaded = nil
+                    trap.nextAttackTime = ct + COOLDOWN_TIME 
+                    task.spawn(function() pcall(function() rf.PlaceUnit:InvokeServer(unpack(bullet)) end) end)
+                end
+            end
+        end)
+
+        DebugLog("✅ Ice Strategic Farm Active (4 Inner Sensors)")
+        while not forceRestart do 
+            if CheckAndGoLobbyIfRich() then forceRestart = true; break end
+            task.wait(1) 
         end
-        while not isEnd.value do task.wait(1) end
     end
 
-    while true do
-        runSession()
+    while true do 
+        runSession() 
         task.wait(3)
         if not CheckAndGoLobbyIfRich() then
-            for i = 1, 2 do pcall(function() rf.RestartGame:InvokeServer() end); task.wait(2.5) end
+            pcall(function() rf.RestartGame:InvokeServer() end)
+            pcall(function()
+                local btn = LP.PlayerGui.GameGui.Screen.Middle.GameEnd.Items.Frame.Actions.Items.Again
+                if btn and getconnections then
+                    for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
+                    for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
+                end
+            end)
+            task.wait(2.5) 
         end
-        task.wait(3)
+        task.wait(3) 
     end
 end
 
@@ -981,35 +1057,29 @@ local function executeAutoBuyRaff()
     pcall(function() seedsAmount = SafeNum(mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
 
     if seedsAmount >= 75000 then
-        local lastRaffBuy = getgenv().LastRaffBuy or 0
-        if tick() - lastRaffBuy > 15 then
-            getgenv().LastRaffBuy = tick()
-            DebugLog("🛒 [SHOP] ตังค์พอแล้ว (75k+)! ไม่พบ Rafflesia สแกนหา Remote ยิงซื้อ 1 ครั้ง...")
-            
-            local buyRemote = nil
-            pcall(function() buyRemote = game.WTBuyItem end)
-            
-            if not buyRemote then
-                for _, obj in ipairs(game:GetDescendants()) do
-                    if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
-                        buyRemote = obj; break
-                    end
+        local buyRemote = nil
+        pcall(function() buyRemote = game.WTBuyItem end)
+        
+        if not buyRemote then
+            for _, obj in ipairs(game:GetDescendants()) do
+                if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
+                    buyRemote = obj; break
                 end
             end
-
-            if buyRemote then
-                task.spawn(function()
-                    pcall(function()
-                        local args = { "normal", 300, "300-3" }
-                        buyRemote:InvokeServer(unpack(args))
-                    end)
-                end)
-                DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ (รอผลลัพธ์...)")
-            else
-                DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
-            end
-            task.wait(2)
         end
+
+        if buyRemote then
+            task.spawn(function()
+                pcall(function()
+                    local args = { "normal", 300, "300-3" }
+                    buyRemote:InvokeServer(unpack(args))
+                end)
+            end)
+            DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ (รอผลลัพธ์...)")
+        else
+            DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
+        end
+        task.wait(2)
     end
 end
 
@@ -1023,7 +1093,7 @@ local function executeAutoRollLawn()
 
     if seedsAmount < 850 then return end
 
-    DebugLog("🎰 [GACHA MODE] เริ่มสุ่ม Lawnmower ด้วยระบบ Fast Roll (จาก Trade Script)!")
+    DebugLog("🎰 [GACHA MODE] เริ่มสุ่ม Lawnmower ด้วยระบบ Fast Roll")
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 10)
     local BuyFunction = rf and rf:FindFirstChild("BuyUnitBox")
     if not BuyFunction then return end
