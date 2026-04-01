@@ -368,6 +368,9 @@ local lastS, lastG, lastT = 0, 0, tick()
 local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     
+    -- 🛑 ห้ามส่ง Log ถ้าหน้าจอ UI หายไป (กันบัคเลข 0)
+    if not LP.PlayerGui:FindFirstChild("GameGui") then return end
+    
     local success, err = pcall(function()
         local seedText, gemText = "0", "0"
         pcall(function() seedText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
@@ -412,8 +415,13 @@ local function updateLogData()
             end
             
             lastS, lastG, lastT = sNum, gemsAmount, tick()
+            DebugLog("⚡ [NOSALT] ทะลวง Ngrok สำเร็จ! ส่งข้อมูลแล้ว -> Seed: " .. tostring(sNum))
         end
     end)
+    
+    if not success then
+        DebugLog("❌ [ERROR] ส่งข้อมูลไม่สำเร็จ: " .. tostring(err))
+    end
 end
 
 task.spawn(function()
@@ -969,68 +977,55 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 STANDALONE SYSTEM)
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE (🔥 FIXED PRIORITY & LOCK)
 -- ==========================================
 
-local function executeAutoBuyRaff()
-    local hasRaff, _ = GetTrueOwnedInventory()
-    if hasRaff then return end
-
-    local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
-    local seedsAmount = 0
-    pcall(function() seedsAmount = SafeNum(mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
-
-    if seedsAmount >= 75000 then
-        local lastRaffBuy = getgenv().LastRaffBuy or 0
-        if tick() - lastRaffBuy > 15 then
-            getgenv().LastRaffBuy = tick()
-            DebugLog("🛒 [SHOP] ตังค์พอแล้ว (75k+)! ไม่พบ Rafflesia สแกนหา Remote ยิงซื้อ 1 ครั้ง...")
-            
-            local buyRemote = nil
-            pcall(function() buyRemote = game.WTBuyItem end)
-            
-            if not buyRemote then
-                for _, obj in ipairs(game:GetDescendants()) do
-                    if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
-                        buyRemote = obj; break
-                    end
-                end
+local function executeAutoBuyRaff(seedsAmount)
+    local buyRemote = nil
+    pcall(function() buyRemote = game.WTBuyItem end)
+    if not buyRemote then
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj.Name == "WTBuyItem" and obj:IsA("RemoteFunction") then
+                buyRemote = obj; break
             end
-
-            if buyRemote then
-                task.spawn(function()
-                    pcall(function()
-                        local args = { "normal", 300, "300-3" }
-                        buyRemote:InvokeServer(unpack(args))
-                    end)
-                end)
-                DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ (รอผลลัพธ์...)")
-            else
-                DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
-            end
-            task.wait(2)
         end
+    end
+
+    if buyRemote then
+        task.spawn(function()
+            pcall(function()
+                buyRemote:InvokeServer("normal", 300, "300-3")
+            end)
+        end)
+        DebugLog("🎟️ ยิงคำสั่งซื้อ Rafflesia สำเร็จ!")
+    else
+        DebugLog("❌ หาไฟล์ WTBuyItem ไม่เจอเลยครับ!")
     end
 end
 
-local function executeAutoRollLawn()
-    local _, hasLawn = GetTrueOwnedInventory()
-    if hasLawn then return end
-
-    local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
-    local seedsAmount = 0
-    pcall(function() seedsAmount = SafeNum(mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
-
-    if seedsAmount < 850 then return end
-
-    DebugLog("🎰 [GACHA MODE] เริ่มสุ่ม Lawnmower ด้วยระบบ Fast Roll (จาก Trade Script)!")
+local function executeAutoRollLawn(seedsAmount)
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 10)
+    local re = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
     local BuyFunction = rf and rf:FindFirstChild("BuyUnitBox")
-    if not BuyFunction then return end
+    local BanEvent = re and re:FindFirstChild("BanFromUnitBox")
+    
+    if not BuyFunction or not BanEvent then 
+        DebugLog("❌ หา Remote Gacha ไม่เจอ!")
+        return 
+    end
+
+    local boxInfo = BOX_DATA[CONFIG.BoxName] or BOX_DATA["ub_tropical"]
+    
+    DebugLog("🚫 กำลังแบนยูนิตขยะในตู้ " .. CONFIG.BoxName .. " ...")
+    for _, uName in ipairs(boxInfo) do
+        pcall(function() BanEvent:FireServer(CONFIG.BoxName, uName, true) end)
+    end
+    task.wait(1.5)
 
     local stuckTimer = tick()
-    local lastGachaSeeds = seedsAmount
+    local lastSeeds = seedsAmount
 
+    DebugLog("🎲 เริ่มลูปสุ่มยับๆ จนกว่าจะหมดตูด...")
     while true do
         local _, currentHasLawn = GetTrueOwnedInventory()
         if currentHasLawn then
@@ -1038,30 +1033,31 @@ local function executeAutoRollLawn()
             break
         end
 
-        local currentSeeds = 0
-        pcall(function() currentSeeds = SafeNum(mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
-
-        if currentSeeds < 850 then
-            DebugLog("💸 เงินหมดแล้ว! กลับไปฟาร์มต่อ!")
+        local currSeedsText = "0"
+        pcall(function() currSeedsText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+        local currSeeds = SafeNum(currSeedsText)
+        
+        if currSeeds < 850 then
+            DebugLog("💸 เงินหมดแล้ว! (เหลือ " .. currSeeds .. ") หยุดสุ่ม และไปฟาร์มต่อ!")
             break
         end
 
-        if currentSeeds == lastGachaSeeds then
+        if currSeeds == lastSeeds then
             if tick() - stuckTimer > 25 then
-                DebugLog("⚠️ [GACHA TIMEOUT] สุ่ม 25 วิแล้วเงินไม่ลด เตะตัวเองไปฟาร์ม!")
+                DebugLog("⚠️ [GACHA TIMEOUT] สุ่ม 25 วิเงินไม่ลด เตะตัวเองออกไปฟาร์ม!")
                 break
             end
         else
-            lastGachaSeeds = currentSeeds
+            lastSeeds = currSeeds
             stuckTimer = tick()
         end
 
-        local rollAmount = (currentSeeds >= 8500) and 10 or 1
-        DebugLog("🎰 ยิงสุ่ม x" .. tostring(rollAmount) .. " (เงิน: " .. tostring(currentSeeds) .. ")")
+        local amount = (currSeeds >= 8500) and 10 or 1
+        DebugLog("🎰 ยิงสุ่ม x" .. amount .. " (เงิน: " .. currSeeds .. ")")
         
-        for i = 1, 3 do
+        for i = 1, 5 do
             task.spawn(function()
-                pcall(function() BuyFunction:InvokeServer(CONFIG.BoxName, rollAmount) end)
+                pcall(function() BuyFunction:InvokeServer(CONFIG.BoxName, amount) end)
             end)
         end
         
@@ -1069,9 +1065,13 @@ local function executeAutoRollLawn()
     end
 end
 
--- 🔄 ระบบควบคุมหลักใน Lobby
+-- 🔄 ระบบควบคุมหลักใน Lobby (THE ABSOLUTE GATEKEEPER)
 local function StartLobbyMasterEngine()
-    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
+    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 15)
+    local raffTryCount = 0 -- ตัวนับจำกัดการซื้อ Rafflesia
+
+    DebugLog("⏳ [GATEKEEPER] ยืนรอ 5 วินาที ให้ UI โหลดเสร็จ...")
+    task.wait(5)
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
@@ -1085,24 +1085,41 @@ local function StartLobbyMasterEngine()
             -- 🛑 รอโหลดเงินเต็มที่
             local seedsAmount = 0
             for i = 1, 10 do
-                pcall(function() seedsAmount = SafeNum(mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
+                local seedsText = "0"
+                pcall(function() seedsText = mainUI.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+                seedsAmount = SafeNum(seedsText)
                 if seedsAmount > 0 then break end
                 task.wait(1)
             end
 
-            -- 🟢 1. บังคับยิงซื้อ Rafflesia (ในทุก Config)
-            executeAutoBuyRaff()
-            
-            -- 🚀 2. บังคับสุ่ม Lawnmower (ในทุก Config ถ้าตังค์พอ)
-            local _, currLawn = GetTrueOwnedInventory()
-            if not currLawn then
-                executeAutoRollLawn()
+            local hasRaff, hasLawn = GetTrueOwnedInventory()
+            DebugLog("📊 [SCAN] กระเป๋าตอนนี้ -> Raff: " .. tostring(hasRaff) .. " | Lawn: " .. tostring(hasLawn) .. " | เงิน: " .. tostring(seedsAmount))
+
+            -- 🛑 1. ซื้อ Rafflesia ก่อน (แต่จำกัดแค่ 2 ครั้งเท่านั้น!)
+            if not hasRaff and seedsAmount >= 75000 and raffTryCount < 2 then
+                raffTryCount = raffTryCount + 1
+                DebugLog("🛒 [PRIORITY 1] เริ่มซื้อ Rafflesia ครั้งที่ " .. tostring(raffTryCount) .. "/2")
+                executeAutoBuyRaff(seedsAmount)
+                task.wait(3) 
+                return -- 🛑 [ล็อคขา] ย้อนกลับไปลูปบน เช็คกระเป๋าใหม่ ไม่ลงไปเดินเข้าด่าน!
             end
             
-            -- 🗺️ 3. คำนวณหาแมพที่จะเล่น
+            if not hasRaff and raffTryCount >= 2 then
+                DebugLog("⚠️ [SKIP] พยายามซื้อ Rafflesia 2 ครั้งแล้วข้ามไปทำอย่างอื่น!")
+            end
+
+            -- 🛑 2. สุ่ม Lawnmower (ถ้าของยังไม่ครบ และเงินถึง 850 ก็สุ่มแหลก!)
+            local _, _, shouldRoll = GetRoutingPlan()
+            if shouldRoll and not hasLawn and seedsAmount >= 850 then
+                DebugLog("🎰 [PRIORITY 2] เตรียมตัวสุ่ม Lawnmower!")
+                executeAutoRollLawn(seedsAmount)
+                task.wait(2) 
+                return -- 🛑 [ล็อคขา] ย้อนกลับไปลูปบน เช็คกระเป๋า/เงินใหม่ ไม่ลงไปเดินเข้าด่าน!
+            end
+            
+            -- 🟢 3. ด่านสุดท้าย: ไปฟาร์มได้! (ถ้าไม่มีอะไรต้องทำแล้ว)
             local targetMapName, plan, _ = GetRoutingPlan()
             
-            -- 🎒 4. จัดกระเป๋าเตรียมวาร์ป
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 local equipName = "unique_1"
@@ -1118,12 +1135,11 @@ local function StartLobbyMasterEngine()
                 end
             end
 
-            -- 🚶 5. เดินไปวาร์ปเข้าด่าน
             local pads = {85.05, 97.05, 109.05, 121.05}
             local pID = math.random(5, 8)
             
             if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-                DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
+                DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว ยืนยันเงินหมด/ของครบ กำลังเดินไปวาร์ปที่ " .. targetMapName)
                 LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
                 task.wait(5.5) 
                 rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
@@ -1134,14 +1150,6 @@ local function StartLobbyMasterEngine()
         end)
         task.wait(1)
     end
-    
-    local targetMapName, farmUnit, _ = GetRoutingPlan()
-    
-    if farmUnit == "Rafflesia" then RunIceFarmMaster()
-    elseif farmUnit == "Lawnmower" then 
-        if targetMapName == "map_back_garden" then RunBGardenFarmMaster() 
-        else RunSpaceFarmMaster() end
-    else RunTomatoFarmMaster() end
 end
 
 local function isInLobby()
