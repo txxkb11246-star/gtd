@@ -11,7 +11,7 @@ getgenv().FarmRockbottomActive = true
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
-    Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
+    Url = "https://parents-relating-functioning-definitely.trycloudflare.com/update", 
     Interval = 120, -- ⏳ ทำหน้าที่เป็น Force Update ทุก 120 วินาที
     EnableWebhookLog = true,
     GameName = "Garden TD",
