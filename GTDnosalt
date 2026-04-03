@@ -66,7 +66,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [2] ROBUST DATA PARSER (ดึงข้อมูลเงิน/กระเป๋าแม่นยำ 100%)
+-- [2] ROBUST DATA PARSER (ดึงข้อมูลเงิน/กระเป๋า)
 -- ==========================================
 local function GetCurrentCurrency(ctype)
     local val = 0
@@ -92,22 +92,13 @@ local function GetCurrentCurrency(ctype)
     return math.floor(val or 0)
 end
 
--- ⏳ รอเกมโหลดข้อมูล ป้องกันการอ่านค่าได้ 0
+-- 🔥 บังคับรอ UI เกมซิงค์ ป้องกันเกมหลอกว่ามีเงิน 250
 local function WaitForPlayerData()
-    DebugLog("⏳ [SYSTEM] กำลังรอข้อมูลผู้เล่นและ UI โหลดให้สมบูรณ์...")
-    local timeout = tick() + 30
-    
-    while tick() < timeout do
-        local seeds = GetCurrentCurrency("seeds")
-        if seeds > 0 then
-            DebugLog("✅ [SYSTEM] โหลดข้อมูลเสร็จสิ้น พบเงิน: " .. tostring(seeds))
-            task.wait(2) 
-            return true
-        end
-        task.wait(1)
-    end
-    DebugLog("⚠️ [SYSTEM] หมดเวลารอโหลดเงิน (อาจมีเงิน 0 จริงๆ)")
-    return false
+    DebugLog("⏳ [SYSTEM] บังคับรอเซิร์ฟเวอร์ซิงค์ข้อมูล UI 8 วินาทีให้ค่าเงินนิ่ง...")
+    task.wait(8) 
+    local seeds = GetCurrentCurrency("seeds")
+    DebugLog("✅ [SYSTEM] โหลดข้อมูลเสร็จสิ้น พบเงินจริง: " .. tostring(seeds))
+    return true
 end
 
 local function GetTrueOwnedInventory()
@@ -152,7 +143,7 @@ local function GetTrueOwnedInventory()
 end
 
 -- ==========================================
--- [3] ROUTING ENGINE (AUTO SEED ICE LOGIC)
+-- [3] ROUTING ENGINE (ลอจิกเป๊ะตามสั่ง 100%)
 -- ==========================================
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
@@ -163,24 +154,24 @@ local function GetRoutingPlan()
 
     if CONFIG.SelectMap == "AutoSeed" then
         if hasLawn and hasRaff then
-            -- มีครบทั้ง 2 ตัว: ไป Ice และใช้ Raff เป็นอันดับแรก
+            -- มีทั้ง Lawn และ Raff: ไป Ice และใช้ Raff เป็นอันดับแรก
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
             shouldRollGacha = false
         elseif hasLawn and not hasRaff then
-            -- มี Lawn แต่ยังไม่มี Raff: ไป Ice ตามกฎ
+            -- มี Lawn อย่างเดียว: ไป Ice สุ่มหา Raff
             targetMapName = "map_christmas"
             farmUnit = "Lawnmower"
             shouldRollGacha = true 
-            targetBoxKey = "confusion" -- หากล่อง Tropical เพื่อหา Raff
+            targetBoxKey = "confusion" 
         elseif hasRaff and not hasLawn then
-            -- มี Raff แต่ไม่มี Lawn
+            -- มี Raff อย่างเดียว: ไป Ice สุ่มหา Lawn
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
             shouldRollGacha = true 
-            targetBoxKey = "find_lawn" -- หากล่อง Back Garden เพื่อหา Lawn
+            targetBoxKey = "find_lawn" 
         else
-            -- ไม่มีอะไรเลย
+            -- ไม่มีอะไรเลย: ฟาร์ม Tomato สุ่มหา Raff ก่อน
             targetMapName = "map_farm"
             farmUnit = "Tomato"
             shouldRollGacha = true
@@ -276,13 +267,13 @@ local function FastGacha(boxKey)
     end
     task.wait(1.5)
 
-    local speedMultiplier = 15 -- ยิงรัวๆ 15 คำสั่งต่อลูป
+    local speedMultiplier = 15 -- 🚀 ยิงรัวๆ 15 คำสั่งต่อลูป
 
-    -- สุ่มจนกว่าเงินจะลดลงต่ำกว่าราคา 10 กล่อง (ประมาณ 8500)
+    -- สุ่มไปเรื่อยๆ จนกว่าเงินจะไม่พอซื้อ 10 กล่อง (ราคา 8500)
     while true do
         local currentSeeds = GetCurrentCurrency("seeds")
         if currentSeeds < 8500 then
-            DebugLog("🎰 [GACHA] เงินลดลงต่ำกว่า 8500 แล้ว หยุดสุ่มและไปลุยด่าน!")
+            DebugLog("🎰 [GACHA] เงินลดลงต่ำกว่า 8500 หยุดสุ่มและเดินไปวาร์ปด่าน!")
             break
         end
 
@@ -1020,9 +1011,6 @@ end
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     
-    -- รอให้ข้อมูลต่างๆ โหลดเสร็จก่อนเริ่มทำงานใน Lobby
-    WaitForPlayerData()
-    
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
             local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
@@ -1051,7 +1039,7 @@ local function StartLobbyMasterEngine()
             end
 
             if shouldRoll and seedsAmount >= 8500 then
-                -- 🚀 โดดเข้าระบบสุ่มกล่องแบบรัวๆ (เมื่อครบเงื่อนไข ไม่เดินไปไหน)
+                -- 🚀 โดดเข้าระบบสุ่มกล่องแบบรัวๆ
                 FastGacha(targetBox)
             else
                 local pads = {85.05, 97.05, 109.05, 121.05}
@@ -1105,13 +1093,12 @@ end)
 -- ==========================================
 -- [14] SYSTEM BOOTSTRAP
 -- ==========================================
-DebugLog("⏳ [SYSTEM] เริ่มต้นระบบ รอกระเป๋าและ UI 6 วินาที...")
-task.wait(6)
+WaitForPlayerData() -- ⏳ ล็อกสคริปต์ให้รอกระเป๋าและ UI เงินตรงนี้เลยก่อนเริ่มทุกอย่าง
+DebugLog("⏳ [SYSTEM] เริ่มต้นระบบหลัก...")
 
 if isInLobby() then 
     StartLobbyMasterEngine() 
 else 
-    WaitForPlayerData() 
     local _, farmUnit, _, _ = GetRoutingPlan()
     DebugLog("🎮 [FARM] สแกนเสร็จสิ้น: ตัดสินใจใช้แผนฟาร์มโหมด " .. farmUnit)
     
