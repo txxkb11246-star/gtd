@@ -109,12 +109,13 @@ local function CountTotalUnits()
     return count
 end
 
+-- 🔥 ระบบ Smart Wait (รองรับไอดี 0 บาท และรอกระเป๋าโหลดเสร็จ)
 local function WaitForRealData()
     DebugLog("⏳ [SYSTEM] กำลังรอให้เกมโหลดข้อมูล UI และกระเป๋าจนเสถียร...")
     
     local lastSeeds = -1
     local stableTicks = 0
-    local maxWait = 20 
+    local maxWait = 20 -- ทนรอสูงสุด 20 วินาที
 
     for i = 1, maxWait do
         local currentSeeds = GetCurrentCurrency("seeds")
@@ -123,12 +124,13 @@ local function WaitForRealData()
         if currentSeeds == lastSeeds then
             stableTicks = stableTicks + 1
         else
-            stableTicks = 0 
+            stableTicks = 0 -- ถ้าเงินยังวิ่งอยู่ ให้รีเซ็ตเวลา
         end
         lastSeeds = currentSeeds
 
         DebugLog("🔍 [SCAN] เงิน: " .. tostring(currentSeeds) .. " | ไอเทมในตัว: " .. tostring(unitsCount) .. " | ความนิ่ง: " .. tostring(stableTicks) .. "/3")
 
+        -- เงื่อนไข: เงินนิ่งติดต่อกัน 3 วิ (ไม่อนิเมท) + มีไอเทมในกระเป๋าอย่างน้อย 1 ชิ้น (มี Tomato ก็ยังดี)
         if stableTicks >= 3 and unitsCount > 0 then
             DebugLog("✅ [SYSTEM] ข้อมูลเสถียร 100%! พร้อมทำงาน")
             task.wait(1)
@@ -174,7 +176,7 @@ local function GetTrueOwnedInventory()
 end
 
 -- ==========================================
--- [3] ROUTING ENGINE 
+-- [3] ROUTING ENGINE (ลอจิกเป๊ะตามสั่ง 100%)
 -- ==========================================
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
@@ -185,18 +187,21 @@ local function GetRoutingPlan()
 
     if CONFIG.SelectMap == "AutoSeed" then
         if hasRaff then
+            -- 🌸 มี Rafflesia: ไปด่าน Ice (map_christmas) เสมอ (ไม่สนว่าจะมี Lawn หรือไม่)
             DebugLog("🗺️ [LOGIC] AutoSeed: พบ Rafflesia -> มุ่งหน้าด่าน Ice")
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
-            shouldRollGacha = not hasLawn 
+            shouldRollGacha = not hasLawn -- ถ้ายังไม่มี Lawn ให้สุ่มหา Lawn
             targetBoxKey = "find_lawn"
         elseif hasLawn then
+            -- 🚜 ไม่มี Raff แต่มี Lawnmower: ไปด่าน BGarden
             DebugLog("🗺️ [LOGIC] AutoSeed: พบ Lawnmower (ไม่มี Raff) -> มุ่งหน้าด่าน BGarden")
             targetMapName = "map_back_garden"
             farmUnit = "Lawnmower"
             shouldRollGacha = true 
-            targetBoxKey = "confusion" 
+            targetBoxKey = "confusion" -- สุ่มหา Raff
         else
+            -- 🍅 ไม่มีทั้งคู่: ไปด่าน Farm 
             DebugLog("🗺️ [LOGIC] AutoSeed: ไม่มีตัวแบก -> มุ่งหน้าด่าน Farm")
             targetMapName = "map_farm"
             farmUnit = "Tomato"
@@ -262,7 +267,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [4] GACHA SYSTEM (TURBO SPAM)
+-- [4] GACHA SYSTEM (TURBO SPAM จนเงินเกลี้ยง)
 -- ==========================================
 local BOX_DATA = {
     ["distortion"] = { Id = "ub_space", Banned = {"unit_robo_stem", "unit_electric_jabber", "unit_cyborg_farmer", "unit_tri_orb", "unit_alien_plant", "unit_quantum_stem", "unit_space_booster"} },
@@ -302,11 +307,13 @@ local function FastGacha(boxKey)
     while true do
         local currentSeeds = GetCurrentCurrency("seeds")
         
+        -- ถ้าเงินน้อยกว่า 850 (เปิดแม้แต่ 1 กล่องไม่ได้แล้ว) ให้หยุด
         if currentSeeds < 850 then
             DebugLog("🎰 [GACHA] เงินเกลี้ยงแล้ว! หยุดสุ่มเพื่อไปฟาร์มต่อ")
             break
         end
 
+        -- ถ้าเงินไม่ถึง 8500 (ซื้อ x10 ไม่ได้) ให้ซื้อ x1 รัวๆ จนกว่าจะหมด
         local buyAmount = 10
         if currentSeeds < 8500 then
             buyAmount = 1
@@ -371,20 +378,19 @@ task.spawn(function()
 
     while task.wait(0.5) do
         pcall(function()
-            -- ปิด UI ที่กิน RAM แต่ไม่ยุ่งกับ PlayerGui ของเกมหลักเลย
+            -- ปิด UI ที่กิน RAM ของตัวเกม
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)
             
-            -- ค้นหาและทำลายขยะเฉพาะใน CoreGui (ข้าม PlayerGui ทิ้งไปเลย)
+            -- ค้นหาและทำลายขยะเฉพาะใน CoreGui (ข้าม PlayerGui ทิ้งไปเลย 100%)
             huntAndDestroy(game:GetService("CoreGui"))
             if gethui then huntAndDestroy(gethui()) end
         end)
     end
 end)
 
--- ยังคงลบ GameEnd / LevelUp ให้อยู่ เพราะมันชอบบัคค้างหน้าจอ
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
@@ -440,7 +446,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [6] AFK & WEBHOOK LOG
+-- [6] AFK & WEBHOOK LOG (NGROK BYPASS)
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -1027,7 +1033,7 @@ local function RunBGardenFarmMaster()
             if not safeWait(2.3) then return end
             deployLawnmower(1, DATA.LAW4, "LAW6")
 
-            DebugLog("🔥 [SPAM MODE] เริ่มวางรัวๆ 30 ตัว")
+            DebugLog("🔥 [SPAM MODE] เริ่มวางรัวๆ 30 ตัว (LAW 7 ถึง LAW 36) ดีเลย์ 0.1 วิ!")
             for i = 7, 36 do
                 if not safeWait(0.1) then return end
                 deployLawnmower(1, DATA.LAW4, "LAW" .. tostring(i))
@@ -1058,8 +1064,15 @@ local function StartLobbyMasterEngine()
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
-            local targetMapName, planUnit, shouldRoll, targetBox = GetRoutingPlan()
+            local mainUI = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
+            if mainUI.Middle.Inventory.Visible == false then 
+                local invBtn = mainUI.Left.Sidebar.Items.Inventory.Items.Button
+                ClickButton(invBtn)
+                task.wait(2) 
+            end
+
             local seedsAmount = GetCurrentCurrency("seeds")
+            local targetMapName, planUnit, shouldRoll, targetBox = GetRoutingPlan()
             
             DebugLog("📊 [LOBBY CHECK] เงิน: " .. tostring(seedsAmount) .. " | สุ่ม?: " .. tostring(shouldRoll) .. " | เป้าหมายฟาร์ม: " .. tostring(planUnit))
             
@@ -1077,6 +1090,7 @@ local function StartLobbyMasterEngine()
             end
 
             if shouldRoll and seedsAmount >= 850 then
+                -- 🚀 โดดเข้าระบบสุ่มกล่องแบบรัวๆ (เงื่อนไขเปลี่ยนเป็นมีเงินพอเปิด 1 กล่องก็สุ่ม)
                 FastGacha(targetBox)
             else
                 local pads = {85.05, 97.05, 109.05, 121.05}
@@ -1126,7 +1140,7 @@ end)
 -- [14] SYSTEM BOOTSTRAP
 -- ==========================================
 DebugLog("⏳ [SYSTEM] เริ่มต้นระบบ...")
-WaitForRealData() 
+WaitForRealData() -- บังคับรอจนกว่า UI เงินจะนิ่งและมีไอเทมในกระเป๋า
 
 if isInLobby() then 
     StartLobbyMasterEngine() 
