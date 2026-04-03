@@ -12,7 +12,7 @@ getgenv().FarmRockbottomActive = true
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120,
+    Interval = 120, -- ⏳ ทำหน้าที่เป็น Force Update ทุก 120 วินาที
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
@@ -66,41 +66,47 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [2] DATA PARSER & SMART WAITER (FIXED MONEY 0)
+-- [2] ROBUST DATA PARSER (ดึงข้อมูลเงิน/กระเป๋าแม่นยำ 100%)
 -- ==========================================
-local function SafeNum(input)
-    if type(input) == "number" then return math.floor(input) end
-    local s = tostring(input):upper():gsub(",", "")
-    local nStr = s:match("[%d%.]+")
-    local val = tonumber(nStr) or 0
-    if s:find("K") then val = val * 1000 elseif s:find("M") then val = val * 1000000 end
-    return math.floor(val)
-end
-
-local function GetExactSeeds()
-    local seeds = 0
+local function GetCurrentCurrency(ctype)
+    local val = 0
     pcall(function()
-        local text = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text
-        seeds = SafeNum(text)
+        local lbl
+        if ctype == "gems" then
+            lbl = player.PlayerGui:FindFirstChild("SpaceGemsDisplay", true)
+            if not lbl then lbl = player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SpaceGemsDisplay") end
+        else
+            lbl = player.PlayerGui:FindFirstChild("SeedsDisplay", true)
+            if not lbl then lbl = player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SeedsDisplay") end
+        end
+        local textValue = lbl and lbl:FindFirstChild("Title") and lbl.Title.Text or ""
+        if textValue ~= "" then
+            local cleanText = string.lower(string.gsub(textValue, ",", ""))
+            local numStr, suffix = string.match(cleanText, "([%d%.]+)%s*([kmb]?)")
+            if numStr then
+                val = tonumber(numStr)
+                if suffix == "k" then val = val * 1000 elseif suffix == "m" then val = val * 1000000 elseif suffix == "b" then val = val * 1000000000 end
+            end
+        end
     end)
-    return seeds
+    return math.floor(val or 0)
 end
 
--- ⏳ ระบบรอเกมโหลดสมบูรณ์ก่อนทำงาน ป้องกันการอ่านค่าได้ 0
+-- ⏳ รอเกมโหลดข้อมูล ป้องกันการอ่านค่าได้ 0
 local function WaitForPlayerData()
     DebugLog("⏳ [SYSTEM] กำลังรอข้อมูลผู้เล่นและ UI โหลดให้สมบูรณ์...")
-    local timeout = tick() + 20
+    local timeout = tick() + 30
     
     while tick() < timeout do
-        local seeds = GetExactSeeds()
+        local seeds = GetCurrentCurrency("seeds")
         if seeds > 0 then
             DebugLog("✅ [SYSTEM] โหลดข้อมูลเสร็จสิ้น พบเงิน: " .. tostring(seeds))
-            task.wait(2) -- รอเผื่อกระเป๋าตัวละครกำลังตามมา
+            task.wait(2) 
             return true
         end
         task.wait(1)
     end
-    DebugLog("⚠️ [SYSTEM] หมดเวลารอโหลดเงิน (หรือผู้เล่นอาจมีเงิน 0 จริงๆ)")
+    DebugLog("⚠️ [SYSTEM] หมดเวลารอโหลดเงิน (อาจมีเงิน 0 จริงๆ)")
     return false
 end
 
@@ -108,17 +114,17 @@ local function GetTrueOwnedInventory()
     local hasRaff = false
     local hasLawn = false
 
-    local function checkStr(txt)
-        if not txt then return end
-        txt = string.lower(txt)
-        if txt == "unit_rafflesia" or txt == "rafflesia" then hasRaff = true end
-        if txt == "unit_lawnmower" or txt == "lawnmower" then hasLawn = true end
+    local function checkExact(str)
+        if not str then return end
+        str = string.lower(str)
+        if str == "unit_rafflesia" or str == "rafflesia" then hasRaff = true end
+        if str == "unit_lawnmower" or str == "lawnmower" then hasLawn = true end
     end
 
     pcall(function()
-        for _, v in pairs(LP.Backpack:GetChildren()) do checkStr(v.Name) end
+        for _, v in pairs(LP.Backpack:GetChildren()) do checkExact(v.Name) end
         if LP.Character then
-            for _, v in pairs(LP.Character:GetChildren()) do checkStr(v.Name) end
+            for _, v in pairs(LP.Character:GetChildren()) do checkExact(v.Name) end
         end
     end)
 
@@ -128,7 +134,7 @@ local function GetTrueOwnedInventory()
             for i = 1, 10 do
                 local slot = bUI.Backpack.Hotbar:FindFirstChild(tostring(i))
                 if slot and slot:FindFirstChild("ToolName") then
-                    checkStr(slot.ToolName.Text)
+                    checkExact(slot.ToolName.Text)
                 end
             end
         end
@@ -138,7 +144,7 @@ local function GetTrueOwnedInventory()
         local mainUI = LP.PlayerGui.GameGui.Screen
         local scroll = mainUI.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
         for _, v in pairs(scroll:GetDescendants()) do
-            if v:IsA("TextLabel") or v:IsA("TextButton") then checkStr(v.Text) else checkStr(v.Name) end
+            if v:IsA("TextLabel") or v:IsA("TextButton") then checkExact(v.Text) else checkExact(v.Name) end
         end
     end)
 
@@ -146,30 +152,39 @@ local function GetTrueOwnedInventory()
 end
 
 -- ==========================================
--- [3] ROUTING ENGINE (YOUR EXACT MAP LOGIC)
+-- [3] ROUTING ENGINE (AUTO SEED ICE LOGIC)
 -- ==========================================
 local function GetRoutingPlan()
     local hasRaff, hasLawn = GetTrueOwnedInventory()
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
     local shouldRollGacha = false
-    local targetBoxKey = "confusion" -- ค่าเริ่มต้นสำหรับกล่อง
+    local targetBoxKey = "confusion" 
 
     if CONFIG.SelectMap == "AutoSeed" then
-        if hasRaff then
+        if hasLawn and hasRaff then
+            -- มีครบทั้ง 2 ตัว: ไป Ice และใช้ Raff เป็นอันดับแรก
             targetMapName = "map_christmas"
             farmUnit = "Rafflesia"
-            shouldRollGacha = not hasLawn -- ถ้ามี Raff แต่ไม่มี Lawn ให้สุ่ม!
-            targetBoxKey = "confusion"
-        elseif hasLawn then
-            targetMapName = "map_back_garden"
+            shouldRollGacha = false
+        elseif hasLawn and not hasRaff then
+            -- มี Lawn แต่ยังไม่มี Raff: ไป Ice ตามกฎ
+            targetMapName = "map_christmas"
             farmUnit = "Lawnmower"
-            shouldRollGacha = false 
+            shouldRollGacha = true 
+            targetBoxKey = "confusion" -- หากล่อง Tropical เพื่อหา Raff
+        elseif hasRaff and not hasLawn then
+            -- มี Raff แต่ไม่มี Lawn
+            targetMapName = "map_christmas"
+            farmUnit = "Rafflesia"
+            shouldRollGacha = true 
+            targetBoxKey = "find_lawn" -- หากล่อง Back Garden เพื่อหา Lawn
         else
+            -- ไม่มีอะไรเลย
             targetMapName = "map_farm"
             farmUnit = "Tomato"
             shouldRollGacha = true
-            targetBoxKey = "confusion"
+            targetBoxKey = "confusion" 
         end
     elseif CONFIG.SelectMap == "AutoGem" then
         if hasLawn then
@@ -180,20 +195,23 @@ local function GetRoutingPlan()
             targetMapName = "map_farm"
             farmUnit = "Tomato"
             shouldRollGacha = true
-            targetBoxKey = "confusion"
+            targetBoxKey = "find_lawn"
         end
     elseif CONFIG.SelectMap == "Ice" then
         targetMapName = "map_christmas"
         if hasRaff then farmUnit = "Rafflesia" elseif hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not hasRaff
+        targetBoxKey = "confusion"
     elseif CONFIG.SelectMap == "Space" then
         targetMapName = "map_space"
         if hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not hasLawn
+        targetBoxKey = "find_lawn"
     elseif CONFIG.SelectMap == "BGarden" then
         targetMapName = "map_back_garden"
         if hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not hasLawn
+        targetBoxKey = "find_lawn"
     end
 
     return targetMapName, farmUnit, shouldRollGacha, targetBoxKey
@@ -203,7 +221,7 @@ local function CheckAndGoLobbyIfRich()
     local _, _, shouldRoll, _ = GetRoutingPlan()
     if not shouldRoll then return false end
 
-    local seedsAmount = GetExactSeeds()
+    local seedsAmount = GetCurrentCurrency("seeds")
     
     if seedsAmount >= 8500 then
         DebugLog("💰 [SEED CHECK] เงินครบ " .. tostring(seedsAmount) .. " บังคับกลับ Lobby ไปสุ่มตัว!")
@@ -223,7 +241,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [4] GACHA SYSTEM (IMPORTED & INTEGRATED)
+-- [4] GACHA SYSTEM (TURBO SPAM: UNLIMITED)
 -- ==========================================
 local BOX_DATA = {
     ["distortion"] = { Id = "ub_space", Banned = {"unit_robo_stem", "unit_electric_jabber", "unit_cyborg_farmer", "unit_tri_orb", "unit_alien_plant", "unit_quantum_stem", "unit_space_booster"} },
@@ -233,33 +251,47 @@ local BOX_DATA = {
     ["mango"]      = { Id = "ub_crystal", Banned = {"unit_glow_fruit","unit_hammer","unit_slap_leaf","unit_dragonfruit","unit_magic_pot","unit_zapper"} },
     ["bee"]        = { Id = "ub_bee", Banned = {"unit_banana","unit_worker","unit_fruit_lobber","unit_venus_floortrap","unit_aloe_vera","unit_pomegranate"} },
     ["lucky"]      = { Id = "ub_sun", Banned = {"unit_fire_flower","unit_sound_plant","unit_durian","unit_eggplant","unit_razor","unit_sprinkler"} },
-    ["confusion"]  = { Id = "ub_tropical", Banned = {"unit_radish","unit_scarecrow","unit_kiwi_cannon","unit_grandma","unit_umbra","unit_stun_flower","unit_lawnmower"} }
+    ["confusion"]  = { Id = "ub_tropical", Banned = {"unit_radish","unit_scarecrow","unit_kiwi_cannon","unit_grandma","unit_umbra","unit_stun_flower"} }, 
+    ["find_lawn"]  = { Id = "ub_back_garden", Banned = {} } 
 }
 
 local function FastGacha(boxKey)
     local data = BOX_DATA[boxKey]
     if not data then return end
     
-    local BanEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("BanFromUnitBox")
-    local BuyFunction = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("BuyUnitBox")
+    local BanEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("BanFromUnitBox", 5)
+    local BuyFunction = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("BuyUnitBox", 5)
+
+    if not BuyFunction or not BanEvent then
+        DebugLog("❌ [GACHA] ไม่พบ Remote สุ่มกล่อง ข้ามการสุ่ม")
+        return
+    end
 
     DebugLog("🎰 [GACHA] เริ่มสุ่มกล่อง " .. data.Id .. " พร้อมระบบแบนตัวเกลือ")
     
-    -- Ban
     for _, unitName in ipairs(data.Banned) do
-        pcall(function() BanEvent:FireServer(data.Id, unitName, true) end)
+        task.spawn(function()
+            pcall(function() BanEvent:FireServer(data.Id, unitName, true) end)
+        end)
     end
     task.wait(1.5)
 
-    -- Auto Buy (รัว 10 ครั้งต่อลูปเพื่อความไว)
-    local limit = 8500
-    while GetExactSeeds() >= limit do
-        for i = 1, 5 do
+    local speedMultiplier = 15 -- ยิงรัวๆ 15 คำสั่งต่อลูป
+
+    -- สุ่มจนกว่าเงินจะลดลงต่ำกว่าราคา 10 กล่อง (ประมาณ 8500)
+    while true do
+        local currentSeeds = GetCurrentCurrency("seeds")
+        if currentSeeds < 8500 then
+            DebugLog("🎰 [GACHA] เงินลดลงต่ำกว่า 8500 แล้ว หยุดสุ่มและไปลุยด่าน!")
+            break
+        end
+
+        for i = 1, speedMultiplier do
             task.spawn(function()
                 pcall(function() BuyFunction:InvokeServer(data.Id, 10) end)
             end)
         end
-        task.wait(0.5)
+        task.wait(0.5) 
     end
 end
 
@@ -394,11 +426,8 @@ local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     
     local success, err = pcall(function()
-        local gemText = "0"
-        pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
-        
-        local sNum = GetExactSeeds()
-        local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
+        local sNum = GetCurrentCurrency("seeds")
+        local gemsAmount = GetCurrentCurrency("gems")
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
         if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
@@ -1003,8 +1032,10 @@ local function StartLobbyMasterEngine()
                 task.wait(2) 
             end
 
-            local seedsAmount = GetExactSeeds()
+            local seedsAmount = GetCurrentCurrency("seeds")
             local targetMapName, plan, shouldRoll, targetBox = GetRoutingPlan()
+            
+            DebugLog("📊 [LOBBY CHECK] เงิน: " .. tostring(seedsAmount) .. " | สุ่ม?: " .. tostring(shouldRoll) .. " | เป้าหมายฟาร์ม: " .. tostring(plan))
             
             if not IsInHotbar(plan) then
                 DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
@@ -1020,7 +1051,7 @@ local function StartLobbyMasterEngine()
             end
 
             if shouldRoll and seedsAmount >= 8500 then
-                -- 🚀 โดดเข้าระบบสุ่มกล่องแบบรัวๆ (จากสคริปต์ที่ให้มา)
+                -- 🚀 โดดเข้าระบบสุ่มกล่องแบบรัวๆ (เมื่อครบเงื่อนไข ไม่เดินไปไหน)
                 FastGacha(targetBox)
             else
                 local pads = {85.05, 97.05, 109.05, 121.05}
@@ -1040,7 +1071,7 @@ local function StartLobbyMasterEngine()
         task.wait(1)
     end
     
-    local _, farmUnit, _ = GetRoutingPlan()
+    local _, farmUnit, _, _ = GetRoutingPlan()
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
@@ -1061,7 +1092,6 @@ end
 -- ==========================================
 -- [13] AUTO HOP ENGINE (BACKGROUND MONITOR)
 -- ==========================================
--- ส่องเงินทุกๆ 5 วิ ถ้าเงินแตะ 8500 แล้วยังขาดตัวที่ต้องสุ่ม สั่งวาร์ปหนีกลับมาสุ่มที่ Lobby!
 task.spawn(function()
     while task.wait(5) do
         pcall(function()
@@ -1081,8 +1111,8 @@ task.wait(6)
 if isInLobby() then 
     StartLobbyMasterEngine() 
 else 
-    WaitForPlayerData() -- รอเงินให้เสร็จก่อนเช็คว่าจะเล่นด่านไหน
-    local _, farmUnit, _ = GetRoutingPlan()
+    WaitForPlayerData() 
+    local _, farmUnit, _, _ = GetRoutingPlan()
     DebugLog("🎮 [FARM] สแกนเสร็จสิ้น: ตัดสินใจใช้แผนฟาร์มโหมด " .. farmUnit)
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
