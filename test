@@ -42,10 +42,6 @@ local function DebugLog(msg)
     if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
 
--- ⏳ รอ 5 วินาทีตอนรันครั้งแรก เพื่อให้ RAM โหลด
-DebugLog("⏳ [SYSTEM] เริ่มต้นระบบ! รอ 5 วินาทีให้ข้อมูลกระเป๋าเสถียร...")
-task.wait(5)
-
 -- ==========================================
 -- 🛠️ ANTI ERROR 277 / 773 (AUTO RECONNECT)
 -- ==========================================
@@ -60,7 +56,7 @@ task.spawn(function()
         pcall(function()
             local err, msg = pcall(function() return GuiService:GetErrorMessage() end)
             if err and msg and msg ~= "" then
-                DebugLog("⚠️ ปิดหน้าต่าง Error เกม: " .. tostring(msg))
+                DebugLog("⚠️ ปิดหน้าต่าง Error เกม (รวมถึง 277): " .. tostring(msg))
                 GuiService:ClearError()
                 task.wait(2)
                 pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
@@ -70,30 +66,15 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [2] RAM SCANNER & SMART EQUIP ENGINE
+-- [2] GLOBAL UTILITIES & SMART ROUTING
 -- ==========================================
-local function GetCurrentCurrency(ctype)
-    local val = 0
-    pcall(function()
-        local lbl
-        if ctype == "gems" then
-            lbl = player.PlayerGui:FindFirstChild("SpaceGemsDisplay", true)
-            if not lbl then lbl = player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SpaceGemsDisplay") end
-        else
-            lbl = player.PlayerGui:FindFirstChild("SeedsDisplay", true)
-            if not lbl then lbl = player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SeedsDisplay") end
-        end
-        local textValue = lbl and lbl:FindFirstChild("Title") and lbl.Title.Text or ""
-        if textValue ~= "" then
-            local cleanText = string.lower(string.gsub(textValue, ",", ""))
-            local numStr, suffix = string.match(cleanText, "([%d%.]+)%s*([kmb]?)")
-            if numStr then
-                val = tonumber(numStr)
-                if suffix == "k" then val = val * 1000 elseif suffix == "m" then val = val * 1000000 elseif suffix == "b" then val = val * 1000000000 end
-            end
-        end
-    end)
-    return math.floor(val or 0)
+local function SafeNum(input)
+    if type(input) == "number" then return math.floor(input) end
+    local s = tostring(input):upper():gsub(",", "")
+    local nStr = s:match("[%d%.]+")
+    local val = tonumber(nStr) or 0
+    if s:find("K") then val = val * 1000 elseif s:find("M") then val = val * 1000000 end
+    return math.floor(val)
 end
 
 -- 🧠 ดึงข้อมูลกระเป๋าแบบเจาะลึกผ่าน RAM (getgc)
@@ -175,9 +156,6 @@ local function SmartEquipRemote(requiredUnitName)
     return success
 end
 
--- ==========================================
--- [3] ROUTING ENGINE (ระบบเป้าหมายกล่องและด่าน)
--- ==========================================
 local function GetRoutingPlan()
     local inv, _ = GetRAMInventory()
     local targetMapName = "map_farm"
@@ -187,7 +165,7 @@ local function GetRoutingPlan()
 
     if CONFIG.SelectMap == "AutoSeed" then
         if inv.hasRaff then
-            targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false 
+            targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
         elseif inv.hasLawn then
             targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
@@ -204,18 +182,16 @@ local function GetRoutingPlan()
     elseif CONFIG.SelectMap == "Ice" then
         targetMapName = "map_christmas"
         if inv.hasRaff then farmUnit = "Rafflesia" elseif inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
+        -- ถ้าไม่มี Lawn ให้สุ่มหา Lawn
         shouldRollGacha = not inv.hasLawn
-        targetBoxKey = "find_lawn"
     elseif CONFIG.SelectMap == "Space" then
         targetMapName = "map_space"
         if inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not inv.hasLawn
-        targetBoxKey = "find_lawn"
     elseif CONFIG.SelectMap == "BGarden" then
         targetMapName = "map_back_garden"
         if inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not inv.hasLawn
-        targetBoxKey = "find_lawn"
     end
 
     return targetMapName, farmUnit, shouldRollGacha, targetBoxKey
@@ -225,9 +201,12 @@ local function CheckAndGoLobbyIfRich()
     local _, _, shouldRoll, _ = GetRoutingPlan()
     if not shouldRoll then return false end
 
-    local seedsAmount = GetCurrentCurrency("seeds")
+    local seedsText = "0"
+    pcall(function() seedsText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+    local seedsAmount = SafeNum(seedsText)
+    
     if seedsAmount >= 8500 then
-        DebugLog("💰 [SEED CHECK] เงินแตะ " .. tostring(seedsAmount) .. " บังคับโดดกลับ Lobby ไปสุ่มตัว!")
+        DebugLog("💰 [SEED CHECK] เงินครบ " .. tostring(seedsAmount) .. " บังคับกลับ Lobby ไปสุ่มตัว!")
         pcall(function() 
             local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
             if rf then
@@ -244,7 +223,7 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [4] GACHA SYSTEM (TURBO SPAM)
+-- [3] GACHA SYSTEM (TURBO SPAM)
 -- ==========================================
 local BOX_DATA = {
     ["distortion"] = { Id = "ub_space", Banned = {"unit_robo_stem", "unit_electric_jabber", "unit_cyborg_farmer", "unit_tri_orb", "unit_alien_plant", "unit_quantum_stem", "unit_space_booster"} },
@@ -274,8 +253,14 @@ local function FastGacha(boxKey)
     end
     task.wait(1.5)
 
+    local function getSeeds()
+        local c = 0
+        pcall(function() c = SafeNum(LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text) end)
+        return c
+    end
+
     while true do
-        local seeds = GetCurrentCurrency("seeds")
+        local seeds = getSeeds()
         if seeds < 850 then
             DebugLog("🎰 [GACHA] เงินลดลงต่ำกว่า 850 หยุดสุ่มและเตรียมเข้าด่าน!")
             break
@@ -290,7 +275,7 @@ local function FastGacha(boxKey)
 end
 
 -- ==========================================
--- [5] ULTIMATE SAFE UI CLEANER
+-- [4] ANTI-LAG & ULTIMATE SAFE UI CLEANER
 -- ==========================================
 task.spawn(function()
     while task.wait(120) do pcall(function() collectgarbage("collect") end) end
@@ -386,7 +371,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [6] AFK & WEBHOOK LOG
+-- [5] AFK & WEBHOOK LOG
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -405,6 +390,7 @@ local function get_http_request()
     if type(request) == "function" then return request end
     if type(http_request) == "function" then return http_request end
     if type(syn) == "table" and type(syn.request) == "function" then return syn.request end
+    if type(fluxus) == "table" and type(fluxus.request) == "function" then return fluxus.request end
     return nil
 end
 
@@ -414,8 +400,12 @@ local lastS, lastG, lastT = 0, 0, tick()
 local function updateLogData()
     if not CONFIG.EnableWebhookLog then return end 
     pcall(function()
-        local sNum = GetCurrentCurrency("seeds")
-        local gemsAmount = GetCurrentCurrency("gems")
+        local seedsText, gemText = "0", "0"
+        pcall(function() seedsText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+        pcall(function() gemText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text end)
+        
+        local sNum = SafeNum(seedsText)
+        local gemsAmount = SafeNum(gemText)
         local inv, _ = GetRAMInventory()
 
         if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
@@ -457,7 +447,7 @@ local function StartAutoSkip(restartSignalTable)
 end
 
 -- ==========================================
--- [7] ICE FARM ENGINE
+-- [6] ICE FARM ENGINE
 -- ==========================================
 local function RunIceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -542,7 +532,7 @@ local function RunIceFarmMaster()
 end
 
 -- ==========================================
--- [8] SPACE FARM ENGINE
+-- [7] SPACE FARM ENGINE
 -- ==========================================
 local function RunSpaceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -618,7 +608,7 @@ local function RunSpaceFarmMaster()
 end
 
 -- ==========================================
--- [9] TOMATO FARM ENGINE
+-- [8] TOMATO FARM ENGINE
 -- ==========================================
 local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -719,7 +709,7 @@ local function RunTomatoFarmMaster()
 end
 
 -- ==========================================
--- [10] BGARDEN FARM ENGINE
+-- [9] BGARDEN FARM ENGINE
 -- ==========================================
 local function RunBGardenFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -863,7 +853,7 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [11] LOBBY & AGGRESSIVE GACHA ENGINE
+-- [10] LOBBY & AGGRESSIVE GACHA ENGINE
 -- ==========================================
 local rafflesiaOutOfStock = false
 
@@ -872,7 +862,10 @@ local function StartLobbyMasterEngine()
     
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
-            local seedsAmount = GetCurrentCurrency("seeds")
+            local seedsText = "0"
+            pcall(function() seedsText = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text end)
+            local seedsAmount = SafeNum(seedsText)
+            
             local inv, _ = GetRAMInventory()
             
             -- 🔥 ระบบบังคับซื้อ Rafflesia โดยตรง (ถ้าคอนฟิกต้องการ และเงินถึง 75k)
@@ -892,14 +885,12 @@ local function StartLobbyMasterEngine()
                  end
             end
 
-            -- คำนวณเส้นทางและสิ่งที่ต้องทำใหม่หลังจากพยายามซื้อ
             local targetMapName, planUnit, shouldRoll, targetBox = GetRoutingPlan()
             
             DebugLog("📊 [LOBBY CHECK] เงิน: " .. tostring(seedsAmount) .. " | สุ่ม Lawn?: " .. tostring(shouldRoll) .. " | เป้าหมายฟาร์ม: " .. tostring(planUnit))
             
             SmartEquipRemote(planUnit)
 
-            -- 🚀 สุ่มหา Lawn เท่านั้นเมื่อเงินถึง 850
             if shouldRoll and seedsAmount >= 850 then
                 FastGacha(targetBox)
             else
