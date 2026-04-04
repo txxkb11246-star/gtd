@@ -176,7 +176,7 @@ local function SmartEquipRemote(requiredUnitName)
 end
 
 -- ==========================================
--- [3] ROUTING ENGINE (กำหนดเป้าหมายใหม่)
+-- [3] ROUTING ENGINE (ระบบเป้าหมายกล่องและด่าน)
 -- ==========================================
 local function GetRoutingPlan()
     local inv, _ = GetRAMInventory()
@@ -187,31 +187,35 @@ local function GetRoutingPlan()
 
     if CONFIG.SelectMap == "AutoSeed" then
         if inv.hasRaff then
-            targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false
+            targetMapName = "map_christmas"; farmUnit = "Rafflesia"; shouldRollGacha = false 
         elseif inv.hasLawn then
             targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
+            targetBoxKey = "find_lawn" 
         end
     elseif CONFIG.SelectMap == "AutoGem" then
         if inv.hasLawn then
             targetMapName = "map_space"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
             targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
+            targetBoxKey = "find_lawn"
         end
     elseif CONFIG.SelectMap == "Ice" then
         targetMapName = "map_christmas"
         if inv.hasRaff then farmUnit = "Rafflesia" elseif inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
-        -- ถ้าไม่มี Lawn ให้สุ่มหา Lawn
         shouldRollGacha = not inv.hasLawn
+        targetBoxKey = "find_lawn"
     elseif CONFIG.SelectMap == "Space" then
         targetMapName = "map_space"
         if inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not inv.hasLawn
+        targetBoxKey = "find_lawn"
     elseif CONFIG.SelectMap == "BGarden" then
         targetMapName = "map_back_garden"
         if inv.hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
         shouldRollGacha = not inv.hasLawn
+        targetBoxKey = "find_lawn"
     end
 
     return targetMapName, farmUnit, shouldRollGacha, targetBoxKey
@@ -880,7 +884,7 @@ local function StartLobbyMasterEngine()
                  
                  local checkInv, _ = GetRAMInventory()
                  if not checkInv.hasRaff then
-                     DebugLog("⚠️ [SYSTEM] ตรวจไม่พบ Rafflesia ในกระเป๋า! (แปลว่าตู้ไม่ได้เอามาขาย) -> ข้ามการหา Rafflesia")
+                     DebugLog("⚠️ [SYSTEM] ตรวจไม่พบ Rafflesia ในกระเป๋า! (แปลว่าตู้ไม่ได้เอามาขาย) -> ข้ามการหา Rafflesia เปลี่ยนไปหา Lawn แทน")
                      rafflesiaOutOfStock = true
                  else
                      DebugLog("✅ [SYSTEM] ซื้อ Rafflesia สำเร็จ! อัปเดตเส้นทางเตรียมตัวลุยด่าน")
