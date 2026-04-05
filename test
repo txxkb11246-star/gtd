@@ -42,6 +42,12 @@ local function DebugLog(msg)
     if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
 
+local function isInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return false end
+    return map:FindFirstChild("Garden") ~= nil
+end
+
 -- ==========================================
 -- 🛠️ ANTI ERROR 277 / 773
 -- ==========================================
@@ -62,63 +68,79 @@ task.spawn(function()
     end
 end)
 
-local function isInLobby()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    return map:FindFirstChild("Garden") ~= nil
+-- ==========================================
+-- [2] SAFE CURRENCY CHECKER (รอเงินอัปเดต)
+-- ==========================================
+local function SafeNum(input)
+    if type(input) == "number" then return math.floor(input) end
+    local s = tostring(input):upper():gsub(",", "")
+    local nStr = s:match("[%d%.]+")
+    local val = tonumber(nStr) or 0
+    if s:find("K") then val = val * 1000 elseif s:find("M") then val = val * 1000000 end
+    return math.floor(val)
 end
 
--- ⏳ [สำคัญมาก] บังคับรอ 5 วินาทีแรกเสมอ เพื่อให้ UI และ RAM โหลดครบ
-DebugLog("⏳ [SYSTEM] เริ่มต้นระบบ รอ 5 วินาทีให้ข้อมูลเกมโหลดครบ...")
-task.wait(5)
-
--- ==========================================
--- [2] DATA & CURRENCY ENGINE
--- ==========================================
-local function GetSeeds()
-    local c = 0
-    pcall(function()
-        local text = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SeedsDisplay.Title.Text
-        local cleaned = text:upper():gsub(",", "")
-        if cleaned:find("K") then c = tonumber((cleaned:gsub("K", ""))) * 1000 
-        elseif cleaned:find("M") then c = tonumber((cleaned:gsub("M", ""))) * 1000000 
-        else c = tonumber(cleaned:match("%d+")) end
-    end)
-    return math.floor(c or 0)
-end
-
-local function GetGems()
-    local c = 0
-    pcall(function()
-        local text = LP.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay.SpaceGemsDisplay.Title.Text
-        local cleaned = text:upper():gsub(",", "")
-        if cleaned:find("K") then c = tonumber((cleaned:gsub("K", ""))) * 1000 
-        elseif cleaned:find("M") then c = tonumber((cleaned:gsub("M", ""))) * 1000000 
-        else c = tonumber(cleaned:match("%d+")) end
-    end)
-    return math.floor(c or 0)
+local function GetSafeCurrency(ctype)
+    local val = 0
+    local retries = 0
+    while retries < 15 do
+        pcall(function()
+            local lbl
+            if ctype == "gems" then
+                lbl = player.PlayerGui:FindFirstChild("SpaceGemsDisplay", true) or player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SpaceGemsDisplay")
+            else
+                lbl = player.PlayerGui:FindFirstChild("SeedsDisplay", true) or player.PlayerGui.GameGui.Screen.Bottom.CurrencyDisplay:FindFirstChild("SeedsDisplay")
+            end
+            local textValue = lbl and lbl:FindFirstChild("Title") and lbl.Title.Text or ""
+            val = SafeNum(textValue)
+        end)
+        if val == 250 or val == 0 then
+            retries = retries + 1
+            task.wait(1)
+        else
+            break 
+        end
+    end
+    return val
 end
 
 -- ==========================================
--- [3] INVENTORY SYSTEM (แยก LOBBY กับ FARM ชัดเจน)
+-- [3] INVENTORY ENGINES (แยก LOBBY กับ FARM เพื่อลดแลค)
 -- ==========================================
 
--- 🧠 3.1) ระบบ GETGC (ใช้เฉพาะตอนอยู่ LOBBY เท่านั้น)
-local function GetRAMInventory()
-    local data = { Raff = false, Lawn = false, Tomato = false, Uids = {}, Eq = {} }
+-- 🧠 3.1) LOBBY RAM SCANNER (ทำแค่ครั้งเดียวตอนอยู่ Lobby)
+local CachedInventory = { hasRaff = false, hasLawn = false, hasTomato = false }
+
+local function ScanRAMInventory()
+    DebugLog("🔍 [SYSTEM] สแกนกระเป๋าด้วย RAM (getgc)...")
+    local targetUnits = {
+        hasRaff = false, raffUid = nil, raffEquipped = false,
+        hasLawn = false, lawnUid = nil, lawnEquipped = false,
+        hasTomato = false, tomatoUid = nil, tomatoEquipped = false
+    }
+    local equippedUids = {}
+
     if type(getgc) == "function" then
         pcall(function()
-            for _, obj in ipairs(getgc(true)) do
+            local gc = getgc(true)
+            for _, obj in ipairs(gc) do
                 if type(obj) == "table" then
                     for key, val in pairs(obj) do
                         if type(key) == "string" and string.find(key, "unique_") and type(val) == "table" then
                             if val.ItemData and type(val.ItemData) == "table" and val.ItemData.ID then
-                                local idName = string.lower(val.ItemData.ID)
-                                if val.Equipped then data.Eq[key] = true end
+                                local uid = key
+                                local itemName = string.lower(val.ItemData.ID)
+                                local isEquipped = val.Equipped == true
                                 
-                                if string.find(idName, "rafflesia") then data.Raff = true; data.Uids.Raff = key
-                                elseif string.find(idName, "lawnmower") then data.Lawn = true; data.Uids.Lawn = key
-                                elseif string.find(idName, "tomato") or idName == "unique_1" then data.Tomato = true; data.Uids.Tomato = key end
+                                if isEquipped then table.insert(equippedUids, uid) end
+
+                                if string.find(itemName, "rafflesia") then
+                                    targetUnits.hasRaff = true; targetUnits.raffUid = uid; targetUnits.raffEquipped = isEquipped
+                                elseif string.find(itemName, "lawnmower") then
+                                    targetUnits.hasLawn = true; targetUnits.lawnUid = uid; targetUnits.lawnEquipped = isEquipped
+                                elseif string.find(itemName, "tomato") or itemName == "unique_1" then
+                                    targetUnits.hasTomato = true; targetUnits.tomatoUid = uid; targetUnits.tomatoEquipped = isEquipped
+                                end
                             end
                         end
                     end
@@ -126,10 +148,15 @@ local function GetRAMInventory()
             end
         end)
     end
-    return data
+    
+    CachedInventory.hasRaff = targetUnits.hasRaff
+    CachedInventory.hasLawn = targetUnits.hasLawn
+    CachedInventory.hasTomato = targetUnits.hasTomato
+    
+    return targetUnits, equippedUids
 end
 
--- 🌿 3.2) ระบบ UI ปกติ (ใช้เฉพาะตอนอยู่ในด่าน FARM ห้ามใช้ GETGC เด็ดขาด)
+-- 🌿 3.2) FARM BACKPACK SCANNER (เบาเครื่องสุดๆ ใช้ตอนลงด่าน)
 local function GetFarmInventory()
     local hasRaff, hasLawn = false, false
     local function chk(txt)
@@ -138,6 +165,7 @@ local function GetFarmInventory()
         if string.find(txt, "raff") then hasRaff = true end
         if string.find(txt, "lawn") then hasLawn = true end
     end
+    
     pcall(function() for _, v in pairs(LP.Backpack:GetChildren()) do chk(v.Name) end end)
     pcall(function() if LP.Character then for _, v in pairs(LP.Character:GetChildren()) do chk(v.Name) end end end)
     pcall(function()
@@ -153,18 +181,52 @@ local function GetFarmInventory()
 end
 
 -- ==========================================
--- [4] ROUTING LOGIC
+-- [4] EQUIP SYSTEM (REMOTE BASED FOR LOBBY)
 -- ==========================================
-local function GetRoutingPlan()
-    local hasRaff, hasLawn = false, false
-    
-    if isInLobby() then
-        local ramData = GetRAMInventory()
-        hasRaff, hasLawn = ramData.Raff, ramData.Lawn
-    else
-        hasRaff, hasLawn = GetFarmInventory()
+local function LobbyEquipRemote(requiredUnitName)
+    local inv, equippedUids = ScanRAMInventory()
+    local targetUid = nil
+    local isAlreadyEquipped = false
+
+    if requiredUnitName == "Rafflesia" and inv.hasRaff then
+        targetUid = inv.raffUid; isAlreadyEquipped = inv.raffEquipped
+    elseif requiredUnitName == "Lawnmower" and inv.hasLawn then
+        targetUid = inv.lawnUid; isAlreadyEquipped = inv.lawnEquipped
+    elseif requiredUnitName == "Tomato" and inv.hasTomato then
+        targetUid = inv.tomatoUid; isAlreadyEquipped = inv.tomatoEquipped
     end
 
+    if not targetUid then
+        DebugLog("❌ [EQUIP] ไม่มี " .. requiredUnitName .. " ในกระเป๋า!")
+        return false
+    end
+
+    if isAlreadyEquipped then
+        DebugLog("✅ [EQUIP] " .. requiredUnitName .. " ถูกใส่อยู่แล้ว! (ข้ามการสวมใส่)")
+        return true
+    end
+
+    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
+    if not rf or not rf:FindFirstChild("SetUnitEquipped") then return false end
+
+    -- ถ้ากระเป๋าเต็ม (5/5) ให้ใช้ Remote ถอดชิ้นแรกออกก่อน
+    if #equippedUids >= 5 then
+        DebugLog("🧹 [EQUIP] ช่องใส่เต็ม! กำลังถอดไอเทม: " .. tostring(equippedUids[1]))
+        pcall(function() rf.SetUnitEquipped:InvokeServer(equippedUids[1], false) end)
+        task.wait(0.5)
+    end
+
+    DebugLog("🔄 [EQUIP] ยิง Remote สวมใส่ " .. requiredUnitName .. " [" .. targetUid .. "]")
+    local success = pcall(function() rf.SetUnitEquipped:InvokeServer(targetUid, true) end)
+    task.wait(1.5)
+    
+    return success
+end
+
+-- ==========================================
+-- [5] ROUTING LOGIC (ลอจิกตามสั่ง 100%)
+-- ==========================================
+local function GetRoutingPlan(hasRaff, hasLawn)
     local targetMapName = "map_farm"
     local farmUnit = "Tomato"
     local shouldRollGacha = false
@@ -175,7 +237,7 @@ local function GetRoutingPlan()
         elseif hasLawn then
             targetMapName = "map_back_garden"; farmUnit = "Lawnmower"; shouldRollGacha = false 
         else
-            targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true
+            targetMapName = "map_farm"; farmUnit = "Tomato"; shouldRollGacha = true 
         end
     elseif CONFIG.SelectMap == "AutoGem" then
         if hasLawn then
@@ -186,7 +248,7 @@ local function GetRoutingPlan()
     elseif CONFIG.SelectMap == "Ice" then
         targetMapName = "map_christmas"
         if hasRaff then farmUnit = "Rafflesia" elseif hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
-        shouldRollGacha = false -- ขาด Raff จะให้รอเงิน 75k อย่างเดียว
+        shouldRollGacha = not hasRaff 
     elseif CONFIG.SelectMap == "Space" then
         targetMapName = "map_space"
         if hasLawn then farmUnit = "Lawnmower" else farmUnit = "Tomato" end
@@ -201,12 +263,14 @@ local function GetRoutingPlan()
 end
 
 local function CheckAndGoLobbyIfRich()
-    local _, _, shouldRoll = GetRoutingPlan()
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, _, shouldRoll = GetRoutingPlan(hasRaff, hasLawn)
+    
     if not shouldRoll then return false end
 
-    local seedsAmount = GetSeeds()
+    local seedsAmount = GetSafeCurrency("seeds")
     if seedsAmount >= 8500 then
-        DebugLog("💰 [SEED CHECK] เงินทะลุ 8500 บังคับโดดกลับ Lobby ไปสุ่ม Lawn!")
+        DebugLog("💰 [SEED CHECK] เงินแตะ 8500 บังคับโดดกลับ Lobby ไปสุ่มตู้ Tropical!")
         pcall(function() 
             local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
             if rf then
@@ -223,144 +287,95 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [5] GACHA SYSTEM (TURBO SPAM LAWNMOWER)
+-- [6] GACHA SYSTEM (TURBO SPAM TROPICAL BOX)
 -- ==========================================
-local function FastGachaLawn()
+local function FastGachaTropical()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 5)
     local re = ReplicatedStorage:WaitForChild("RemoteEvents", 5)
     local BuyFunction = rf and rf:FindFirstChild("BuyUnitBox")
     local BanEvent = re and re:FindFirstChild("BanFromUnitBox")
 
     if not BuyFunction or not BanEvent then return end
-    DebugLog("🎰 [GACHA] เริ่มสุ่มตู้ Back Garden (หา Lawn) โหมด TURBO (X15)")
+    DebugLog("🎰 [GACHA] เริ่มสุ่มตู้ Tropical (หา Lawnmower/Rafflesia) โหมด TURBO (X15)")
     
+    -- แบนตัวกากทิ้งให้หมดเพื่อเพิ่มโอกาส
+    local bannedUnits = {"unit_radish","unit_scarecrow","unit_kiwi_cannon","unit_grandma","unit_umbra","unit_stun_flower"}
+    for _, uName in ipairs(bannedUnits) do
+        task.spawn(function() pcall(function() BanEvent:FireServer("ub_tropical", uName, true) end) end)
+    end
+    task.wait(1)
+
+    -- เปิดหน้าต่างกระเป๋าขึ้นมาดูสดๆ
+    pcall(function()
+        local mainUI = LP.PlayerGui:WaitForChild("GameGui").Screen
+        if not mainUI.Middle.Inventory.Visible then 
+            local pos = mainUI.Left.Sidebar.Items.Inventory.Items.Button.AbsolutePosition
+            local size = mainUI.Left.Sidebar.Items.Inventory.Items.Button.AbsoluteSize
+            local insetY = GuiService:GetGuiInset().Y
+            VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X/2), pos.Y + (size.Y/2) + insetY, 0, true, game, 1)
+            task.wait(0.1)
+            VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X/2), pos.Y + (size.Y/2) + insetY, 0, false, game, 1)
+            task.wait(1)
+        end
+    end)
+
     local isSpamming = true
     local speedMultiplier = 15
 
+    -- Thread 1: ยิงสุ่มรัวๆ
     task.spawn(function()
         while isSpamming do
-            local currentSeeds = GetSeeds()
-            
-            if currentSeeds < 850 then
+            local currentSeeds = GetSafeCurrency("seeds")
+            if currentSeeds < 850 then 
                 DebugLog("🎰 [GACHA] เงินลดลงต่ำกว่า 850 หยุดสุ่มและเตรียมลงด่านฟาร์ม!")
-                isSpamming = false
-                break
+                isSpamming = false 
+                break 
             end
-
             local buyAmount = (currentSeeds < 8500) and 1 or 10
-
             for i = 1, speedMultiplier do
-                task.spawn(function() 
-                    pcall(function() BuyFunction:InvokeServer("ub_back_garden", buyAmount) end) 
-                end)
+                task.spawn(function() pcall(function() BuyFunction:InvokeServer("ub_tropical", buyAmount) end) end)
             end
             task.wait() 
         end
     end)
 
-    while isSpamming do task.wait(1) end
-end
+    -- Thread 2: ส่องหน้ากระเป๋า ถ้าได้ตัวที่ต้องการแล้วให้หยุด
+    while isSpamming do
+        local foundTarget = false
+        pcall(function()
+            local scroll = LP.PlayerGui.GameGui.Screen.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
+            for _, v in pairs(scroll:GetDescendants()) do
+                if v:IsA("TextLabel") or v:IsA("TextButton") then
+                    local txt = string.lower(v.Text)
+                    if string.find(txt, "lawnmower") or string.find(txt, "rafflesia") then
+                        foundTarget = true
+                        break
+                    end
+                end
+            end
+        end)
 
--- ==========================================
--- [6] EQUIP SYSTEMS
--- ==========================================
-local function LobbyEquipRemote(unitName)
-    local data = GetRAMInventory()
-    local targetUid = nil
+        if foundTarget then
+            DebugLog("🎉 [GACHA] เยี่ยม! สุ่มได้ตัวที่ต้องการแล้ว หยุดการสุ่ม!")
+            isSpamming = false
+            break
+        end
+        task.wait(1)
+    end
     
-    if unitName == "Rafflesia" and data.Raff then targetUid = data.Uids.Raff
-    elseif unitName == "Lawnmower" and data.Lawn then targetUid = data.Uids.Lawn
-    elseif unitName == "Tomato" and data.Tomato then targetUid = data.Uids.Tomato end
-
-    if not targetUid then return false end
-    if data.Eq[targetUid] then return true end -- ใส่อยู่แล้ว ข้ามเลย
-
-    local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
-    if not rf or not rf:FindFirstChild("SetUnitEquipped") then return false end
-
-    -- ถ้านับของที่ใส่ไว้เกินหรือเท่ากับ 5 ชิ้น ให้ถอดชิ้นแรกออก
-    local countEq = 0
-    local firstEqUid = nil
-    for uid, _ in pairs(data.Eq) do 
-        countEq = countEq + 1 
-        if not firstEqUid then firstEqUid = uid end
-    end
-
-    if countEq >= 5 and firstEqUid then
-        DebugLog("🧹 [LOBBY EQUIP] ช่องเต็ม! ถอด: " .. tostring(firstEqUid))
-        pcall(function() rf.SetUnitEquipped:InvokeServer(firstEqUid, false) end)
-        task.wait(0.5)
-    end
-
-    DebugLog("🔄 [LOBBY EQUIP] สวมใส่ " .. unitName .. " ผ่าน RAM สำเร็จ!")
-    pcall(function() rf.SetUnitEquipped:InvokeServer(targetUid, true) end)
-    task.wait(1)
-    return true
-end
-
--- ฟาร์มใช้ระบบ ClickUI เพื่อความเสถียร (ตามสคริปต์ต้นฉบับที่คุณบอกว่าไม่แลค)
-local function ClickButton(guiObj)
-    if not guiObj then return end
-    local pos = guiObj.AbsolutePosition
-    local size = guiObj.AbsoluteSize
-    local insetY = GuiService:GetGuiInset().Y
-    local cX = pos.X + (size.X / 2)
-    local cY = pos.Y + (size.Y / 2) + insetY
-    VirtualInputManager:SendMouseMoveEvent(cX, cY, game)
-    task.wait(0.12)
-    VirtualInputManager:SendMouseButtonEvent(cX, cY, 0, true, game, 1)
-    task.wait(0.15) 
-    VirtualInputManager:SendMouseButtonEvent(cX, cY, 0, false, game, 1)
-end
-
-local function IsInHotbar(unitName)
-    local bUI = LP.PlayerGui:FindFirstChild("BackpackGui")
-    if not bUI then return false end
-    local hb = bUI.Backpack:FindFirstChild("Hotbar")
-    if not hb then return false end
-    local key = string.lower(unitName)
-    for i = 1, 10 do
-        local slot = hb:FindFirstChild(tostring(i))
-        if slot and slot:FindFirstChild("ToolName") then
-            if string.find(string.lower(slot.ToolName.Text), key) then return true end
-        end
-    end
-    return false
-end
-
-local function FarmTripleLayerEquip(shortName, fullName)
-    if IsInHotbar(shortName) then return true end
+    -- ปิดหน้าต่างกระเป๋า
     pcall(function()
-        local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
-        if rf and rf:FindFirstChild("SetUnitEquipped") then
-            if shortName == "Tomato" then rf.SetUnitEquipped:InvokeServer("unique_1", true)
-            elseif shortName == "Lawnmower" then rf.SetUnitEquipped:InvokeServer("unit_lawnmower", true)
-            elseif shortName == "Rafflesia" then rf.SetUnitEquipped:InvokeServer("unit_rafflesia", true) end
-        end
+        local cBtn = LP.PlayerGui.GameGui.Screen.Middle.Inventory.Top.Close
+        local pos = cBtn.AbsolutePosition
+        local size = cBtn.AbsoluteSize
+        local insetY = GuiService:GetGuiInset().Y
+        VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X/2), pos.Y + (size.Y/2) + insetY, 0, true, game, 1)
+        task.wait(0.1)
+        VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X/2), pos.Y + (size.Y/2) + insetY, 0, false, game, 1)
     end)
-    task.wait(1.5)
-    if IsInHotbar(shortName) then return true end
-    
-    pcall(function()
-        local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
-        if main.Middle.Inventory.Visible == false then 
-            local invBtn = main.Left.Sidebar.Items.Inventory.Items.Button
-            ClickButton(invBtn)
-            task.wait(3) 
-        end
-        local targetBtn = nil
-        local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
-        local searchName = string.lower(fullName)
-        if shortName == "Tomato" then searchName = "unique_1" end
-        for _, v in pairs(scroll:GetDescendants()) do
-            local vName = string.lower(v.Name)
-            if vName == searchName or string.find(vName, string.lower(shortName)) then targetBtn = v; break end
-        end
-        if targetBtn then 
-            for i = 1, 5 do ClickButton(targetBtn); task.wait(1.5); if IsInHotbar(shortName) then break end end 
-        end
-    end)
-    return IsInHotbar(shortName)
+
+    DebugLog("🔄 [SYSTEM] อัปเดตกระเป๋า (RAM) อีกรอบหลังสุ่มเสร็จ...")
+    ScanRAMInventory()
 end
 
 -- ==========================================
@@ -461,30 +476,36 @@ end
 local httpRequest = get_http_request()
 local lastS, lastG, lastT = 0, 0, tick()
 
-local function updateLogData()
-    if not CONFIG.EnableWebhookLog then return end 
-    pcall(function()
-        local sNum = GetSeeds()
-        local gemsAmount = GetGems()
-        local hasRaff, hasLawn = false, false
-        if isInLobby() then 
-            local rd = GetRAMInventory(); hasRaff = rd.Raff; hasLawn = rd.Lawn 
-        else 
-            hasRaff, hasLawn = GetFarmInventory() 
-        end
+task.spawn(function() 
+    while true do 
+        task.wait(1)
+        if not CONFIG.EnableWebhookLog then continue end 
+        pcall(function()
+            local sNum = GetSafeCurrency("seeds")
+            local gemsAmount = GetSafeCurrency("gems")
+            local hasRaff, hasLawn = false, false
+            
+            if isInLobby() then 
+                hasRaff, hasLawn = CachedInventory.hasRaff, CachedInventory.hasLawn
+            else
+                hasRaff, hasLawn = GetFarmInventory()
+            end
 
-        if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
-            local payload = { device = CONFIG.DeviceName, username = LP.Name, seed = sNum, gems = gemsAmount, raff = hasRaff, lawn = hasLawn, game = CONFIG.GameName }
-            local jsonPayload = HttpService:JSONEncode(payload)
-            local headers = { ["Content-Type"] = "application/json", ["ngrok-skip-browser-warning"] = "true" }
-            if httpRequest then httpRequest({ Url = CONFIG.Url, Method = "POST", Headers = headers, Body = jsonPayload })
-            else HttpService:PostAsync(CONFIG.Url, jsonPayload, Enum.HttpContentType.ApplicationJson, false, {["ngrok-skip-browser-warning"] = "true"}) end
-            lastS, lastG, lastT = sNum, gemsAmount, tick()
-        end
-    end)
-end
-task.spawn(function() while true do task.spawn(updateLogData); task.wait(1) end end)
+            if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
+                local payload = { device = CONFIG.DeviceName, username = LP.Name, seed = sNum, gems = gemsAmount, raff = hasRaff, lawn = hasLawn, game = CONFIG.GameName }
+                local jsonPayload = HttpService:JSONEncode(payload)
+                local headers = { ["Content-Type"] = "application/json", ["ngrok-skip-browser-warning"] = "true" }
+                if httpRequest then httpRequest({ Url = CONFIG.Url, Method = "POST", Headers = headers, Body = jsonPayload })
+                else HttpService:PostAsync(CONFIG.Url, jsonPayload, Enum.HttpContentType.ApplicationJson, false, {["ngrok-skip-browser-warning"] = "true"}) end
+                lastS, lastG, lastT = sNum, gemsAmount, tick()
+            end
+        end)
+    end 
+end)
 
+-- ==========================================
+-- [9] AUTO SKIP CLICKER
+-- ==========================================
 local function StartAutoSkip(restartSignalTable)
     task.spawn(function()
         local gui = LP.PlayerGui:WaitForChild("GameGuiNoInset", 30)
@@ -494,18 +515,89 @@ local function StartAutoSkip(restartSignalTable)
         local title = btn:WaitForChild("Title", 10)
         while task.wait(1) do
             if restartSignalTable and restartSignalTable.value == true then break end
-            pcall(function() if title.Text == "Auto Skip: Off" then ClickButton(btn) end end)
+            pcall(function() 
+                if title.Text == "Auto Skip: Off" then 
+                    local pos = btn.AbsolutePosition; local size = btn.AbsoluteSize; local insetY = GuiService:GetGuiInset().Y
+                    local cX = pos.X + (size.X / 2); local cY = pos.Y + (size.Y / 2) + insetY
+                    VirtualInputManager:SendMouseMoveEvent(cX, cY, game); task.wait(0.1)
+                    VirtualInputManager:SendMouseButtonEvent(cX, cY, 0, true, game, 1); task.wait(0.1)
+                    VirtualInputManager:SendMouseButtonEvent(cX, cY, 0, false, game, 1)
+                end 
+            end)
         end
     end)
 end
 
 -- ==========================================
--- [9] ICE FARM ENGINE
+-- [10] FARM EQUIP FALLBACK (สำหรับในด่าน)
+-- ==========================================
+local function FarmTripleLayerEquip(shortName, fullName)
+    local function IsInHotbar(unitName)
+        local bUI = LP.PlayerGui:FindFirstChild("BackpackGui")
+        if not bUI then return false end
+        local hb = bUI.Backpack:FindFirstChild("Hotbar")
+        if not hb then return false end
+        local key = string.lower(unitName)
+        for i = 1, 10 do
+            local slot = hb:FindFirstChild(tostring(i))
+            if slot and slot:FindFirstChild("ToolName") then
+                if string.find(string.lower(slot.ToolName.Text), key) then return true end
+            end
+        end
+        return false
+    end
+
+    if IsInHotbar(shortName) then return true end
+    pcall(function()
+        local rf = ReplicatedStorage:WaitForChild("RemoteFunctions", 3)
+        if rf and rf:FindFirstChild("SetUnitEquipped") then
+            if shortName == "Tomato" then rf.SetUnitEquipped:InvokeServer("unique_1", true)
+            elseif shortName == "Lawnmower" then rf.SetUnitEquipped:InvokeServer("unit_lawnmower", true)
+            elseif shortName == "Rafflesia" then rf.SetUnitEquipped:InvokeServer("unit_rafflesia", true) end
+        end
+    end)
+    task.wait(1.5)
+    
+    if IsInHotbar(shortName) then return true end
+    
+    pcall(function()
+        local main = LP.PlayerGui:WaitForChild("GameGui", 10).Screen
+        if main.Middle.Inventory.Visible == false then 
+            local btn = main.Left.Sidebar.Items.Inventory.Items.Button
+            local pos = btn.AbsolutePosition; local size = btn.AbsoluteSize; local insetY = GuiService:GetGuiInset().Y
+            VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X / 2), pos.Y + (size.Y / 2) + insetY, 0, true, game, 1)
+            task.wait(0.1); VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X / 2), pos.Y + (size.Y / 2) + insetY, 0, false, game, 1)
+            task.wait(3) 
+        end
+        local targetBtn = nil
+        local scroll = main.Middle.Inventory.Inventory.Frame.Items.Items.ScrollingFrame
+        local searchName = string.lower(fullName)
+        if shortName == "Tomato" then searchName = "unique_1" end
+        for _, v in pairs(scroll:GetDescendants()) do
+            local vName = string.lower(v.Name)
+            if vName == searchName or string.find(vName, string.lower(shortName)) then targetBtn = v; break end
+        end
+        if targetBtn then 
+            for i = 1, 5 do 
+                local pos = targetBtn.AbsolutePosition; local size = targetBtn.AbsoluteSize; local insetY = GuiService:GetGuiInset().Y
+                VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X / 2), pos.Y + (size.Y / 2) + insetY, 0, true, game, 1)
+                task.wait(0.1); VirtualInputManager:SendMouseButtonEvent(pos.X + (size.X / 2), pos.Y + (size.Y / 2) + insetY, 0, false, game, 1)
+                task.wait(1.5); if IsInHotbar(shortName) then break end 
+            end 
+        end
+    end)
+    return IsInHotbar(shortName)
+end
+
+-- ==========================================
+-- [11] ICE FARM ENGINE
 -- ==========================================
 local function RunIceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    local _, farmUnit, _, _ = GetRoutingPlan()
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, farmUnit, _ = GetRoutingPlan(hasRaff, hasLawn)
+    
     FarmTripleLayerEquip(farmUnit, "unit_" .. string.lower(farmUnit))
     
     local DATA = {
@@ -563,12 +655,14 @@ local function RunIceFarmMaster()
 end
 
 -- ==========================================
--- [10] SPACE FARM ENGINE
+-- [12] SPACE FARM ENGINE
 -- ==========================================
 local function RunSpaceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    local _, farmUnit, _, _ = GetRoutingPlan()
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, farmUnit, _ = GetRoutingPlan(hasRaff, hasLawn)
+    
     FarmTripleLayerEquip(farmUnit, "unit_" .. string.lower(farmUnit))
     
     local CENTER = Vector3.new(-17.668, -85.057, 30.373)
@@ -618,12 +712,14 @@ local function RunSpaceFarmMaster()
 end
 
 -- ==========================================
--- [11] TOMATO FARM ENGINE
+-- [13] TOMATO FARM ENGINE
 -- ==========================================
 local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    local _, farmUnit, _, _ = GetRoutingPlan()
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, farmUnit, _ = GetRoutingPlan(hasRaff, hasLawn)
+    
     FarmTripleLayerEquip(farmUnit, "unit_" .. string.lower(farmUnit))
     
     local isEnd = {value = false}; StartAutoSkip(isEnd)
@@ -636,7 +732,7 @@ local function RunTomatoFarmMaster()
     local history = {}
     
     local function waitCash(v) 
-        while not isEnd.value do if GetSeeds() >= v then break end; task.wait(0.3) end 
+        while not isEnd.value do if GetSafeCurrency("seeds") >= v then break end; task.wait(0.3) end 
     end
     
     local function findID(unitID)
@@ -687,12 +783,13 @@ local function RunTomatoFarmMaster()
 end
 
 -- ==========================================
--- [12] BGARDEN FARM ENGINE
+-- [14] BGARDEN FARM ENGINE
 -- ==========================================
 local function RunBGardenFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    local _, farmUnit, _, _ = GetRoutingPlan()
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, farmUnit, _ = GetRoutingPlan(hasRaff, hasLawn)
     FarmTripleLayerEquip(farmUnit, "unit_" .. string.lower(farmUnit))
 
     local DATA = {
@@ -773,26 +870,29 @@ local function RunBGardenFarmMaster()
 end
 
 -- ==========================================
--- [13] LOBBY ENGINE
+-- [15] LOBBY ENGINE
 -- ==========================================
 local rafflesiaOutOfStock = false
 
 local function StartLobbyMasterEngine()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     
+    DebugLog("⏳ [LOBBY] สแกนกระเป๋าด้วย RAM ครั้งแรกเพื่อเก็บข้อมูล...")
+    ScanRAMInventory()
+
     while Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Garden") do
         pcall(function()
-            local seedsAmount = GetSeeds()
+            local seedsAmount = GetSafeCurrency("seeds")
             local inv = CachedInventory
             
-            -- 🔥 ระบบบังคับซื้อ Rafflesia 75k
-            if (CONFIG.SelectMap == "AutoSeed" or CONFIG.SelectMap == "Ice") and seedsAmount >= 75000 and not inv.Raff and not rafflesiaOutOfStock then
+            -- 🔥 บังคับซื้อ Rafflesia 75k (ตรวจสอบ 3 วิ ถ้าไม่มีข้ามไปสุ่ม Lawn เลย)
+            if (CONFIG.SelectMap == "AutoSeed" or CONFIG.SelectMap == "Ice") and seedsAmount >= 75000 and not inv.hasRaff and not rafflesiaOutOfStock then
                  DebugLog("💰 เงินทะลุ 75,000! ลองบังคับซื้อ Rafflesia โดยตรง")
                  pcall(function() rf.BuyUnitWithSeeds:InvokeServer("unit_rafflesia") end)
                  task.wait(3)
-                 local checkInv = ScanRAMInventory()
-                 if not checkInv.Raff then
-                     DebugLog("⚠️ [SYSTEM] ตู้ไม่ขาย Rafflesia! -> ข้ามไปหา Lawn แทน")
+                 local checkInv, _ = ScanRAMInventory()
+                 if not checkInv.hasRaff then
+                     DebugLog("⚠️ [SYSTEM] ตู้ไม่ขาย Rafflesia! -> ข้ามไปสุ่มหากล่อง Tropical เพื่อดึง Lawn แทน")
                      rafflesiaOutOfStock = true
                  else
                      DebugLog("✅ [SYSTEM] ซื้อ Rafflesia สำเร็จ!")
@@ -801,18 +901,19 @@ local function StartLobbyMasterEngine()
             end
 
             local targetMapName, planUnit, shouldRoll, targetBox = GetRoutingPlan()
-            DebugLog("📊 [LOBBY CHECK] เงิน: " .. tostring(seedsAmount) .. " | สุ่ม Lawn?: " .. tostring(shouldRoll) .. " | เป้าหมายฟาร์ม: " .. tostring(planUnit))
+            DebugLog("📊 [LOBBY CHECK] เงิน: " .. tostring(seedsAmount) .. " | สุ่ม Lawn?: " .. tostring(shouldRoll) .. " | เป้าหมายด่าน: " .. tostring(targetMapName))
             
-            LobbySmartEquipRemote(planUnit)
+            LobbyEquipRemote(planUnit)
 
+            -- 🚀 สุ่มหา Lawn ที่ตู้ Tropical 
             if shouldRoll and seedsAmount >= 850 then
-                FastGachaLawn()
+                FastGachaTropical()
             else
                 local pads = {85.05, 97.05, 109.05, 121.05}
                 local pID = math.random(5, 8)
                 
                 if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-                    DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
+                    DebugLog("🚶 [LOBBY] พร้อมลุย กำลังเดินไปวาร์ปที่ " .. targetMapName)
                     LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
                     task.wait(5.5) 
                     rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
@@ -833,7 +934,7 @@ local function StartLobbyMasterEngine()
 end
 
 -- ==========================================
--- [14] AUTO HOP ENGINE (BACKGROUND MONITOR)
+-- [16] AUTO HOP ENGINE (BACKGROUND MONITOR)
 -- ==========================================
 local inMapDelay = false
 task.spawn(function()
@@ -841,7 +942,7 @@ task.spawn(function()
         pcall(function()
             if not isInLobby() then
                 if not inMapDelay then
-                    task.wait(10) -- หน่วงเวลา 10 วิเมื่อเพิ่งเข้าด่าน (กันบัคเด้งกลับมั่ว)
+                    task.wait(10) 
                     inMapDelay = true
                 end
                 CheckAndGoLobbyIfRich()
@@ -853,14 +954,17 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [15] SYSTEM BOOTSTRAP
+-- [17] SYSTEM BOOTSTRAP
 -- ==========================================
 if isInLobby() then 
-    ScanRAMInventory() 
     StartLobbyMasterEngine() 
 else 
-    local _, farmUnit, _, _ = GetRoutingPlan()
-    DebugLog("🎮 [FARM] สแกนเสร็จสิ้น: ตัดสินใจใช้แผนฟาร์มโหมด " .. farmUnit)
+    DebugLog("⏳ [SYSTEM] ตรวจพบว่าเริ่มสคริปต์ในด่าน... รอข้อมูลเสถียร 5 วินาที")
+    task.wait(5)
+    
+    local hasRaff, hasLawn = GetFarmInventory()
+    local _, farmUnit, _, _ = GetRoutingPlan(hasRaff, hasLawn)
+    DebugLog("🎮 [FARM] สแกนกระเป๋าเสร็จสิ้น: ตัดสินใจใช้แผนฟาร์ม " .. farmUnit)
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
