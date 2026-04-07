@@ -1,4 +1,4 @@
--- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT) ]] --
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + V2 AUTO-DETECT LOBBY) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -12,12 +12,13 @@ getgenv().FarmRockbottomActive = true
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120, -- ⏳ ทำหน้าที่เป็น Force Update ทุก 120 วินาที
+    Interval = 120, 
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
     ClickMode = "Fire", 
-    EnableDebug = true
+    EnableDebug = true,
+    FarmHoursBeforeHop = 0.1
 }
 
 if getgenv().EnableHorst then
@@ -43,8 +44,186 @@ local function DebugLog(msg)
     if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
 
+-- 🎯 ฟังก์ชันเช็คสถานะแมพ (ประกาศไว้บนสุดเพื่อให้ทุกระบบเรียกใช้ได้)
+local function isInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return false end
+    return map:FindFirstChild("Garden") ~= nil
+end
+
+-- =====================================================================
+-- [2] 🥚 SCRIPT: SMART SWEEPER V2 (ตรวจจับ Lobby ก่อนเก็บไข่)
+-- =====================================================================
+local HitLimitDetected = false 
+
+local function GetDynamicPrices()
+    DebugLog("📊 กำลังสแกนฐานข้อมูลราคาใน RAM...")
+    local priceMap = {}
+    local gcData = getgc(true)
+    
+    for _, obj in ipairs(gcData) do
+        if type(obj) == "table" then
+            pcall(function()
+                if obj.ID and type(obj.ID) == "string" and obj.AwardCurrencyAmount and type(obj.AwardCurrencyAmount) == "number" then
+                    priceMap[string.lower(obj.ID)] = obj.AwardCurrencyAmount
+                end
+            end)
+        end
+    end
+    return priceMap
+end
+
+local function StartUIMonitor()
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            
+            for _, ui in ipairs(LP.PlayerGui:GetDescendants()) do
+                if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+                    if ui.Text and string.find(string.lower(ui.Text), "limit for this collectable") then
+                        HitLimitDetected = true
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function GetCollectRemote()
+    DebugLog("🔍 กำลังค้นหาปืนใหญ่ (RemoteEvent: CollectCollectable)...")
+    for _, instance in ipairs(game:GetDescendants()) do
+        if instance.Name == "CollectCollectable" and instance:IsA("RemoteEvent") then
+            return instance
+        end
+    end
+    DebugLog("❌ ไม่พบ Remote ในเซิร์ฟเวอร์นี้")
+    return nil
+end
+
+local function ScanAndSortEggs(livePrices)
+    DebugLog("🌍 กำลังสแกนหาไข่ในแผนที่ และจัดเรียงจากแพงไปถูก...")
+    local itemsFound = {}
+    
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        local collectID = obj:GetAttribute("ID")
+        local itemType = obj:GetAttribute("ItemId")
+        
+        if type(collectID) == "number" and type(itemType) == "string" then
+            local currentPrice = 0
+            local typeLower = string.lower(itemType)
+            
+            for id, price in pairs(livePrices) do
+                if string.find(id, typeLower) then
+                    if price > currentPrice then 
+                        currentPrice = price 
+                    end
+                end
+            end
+            
+            table.insert(itemsFound, {
+                Object = obj,
+                ID = collectID,
+                Price = currentPrice,
+                Name = itemType
+            })
+        end
+    end
+    
+    table.sort(itemsFound, function(a, b)
+        return a.Price > b.Price
+    end)
+    
+    DebugLog("✅ สแกนเสร็จสิ้น! พบไข่ทั้งหมด " .. tostring(#itemsFound) .. " ชิ้น")
+    return itemsFound
+end
+
+local function CollectSmartly(itemList, remoteEvent)
+    if #itemList == 0 then
+        DebugLog("⚠️ แมพนี้เกลี้ยงแล้ว ไม่มีอะไรให้เก็บ")
+        return
+    end
+
+    DebugLog("🚀 เริ่มทำการดูดไข่ (กวาดทั้งแมพ ไล่จากแพงสุดไปถูกสุด)...")
+    local successCount = 0
+    
+    for index, item in ipairs(itemList) do
+        remoteEvent:FireServer(item.ID)
+        successCount = successCount + 1
+        
+        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
+        task.wait(0.05) 
+    end
+    
+    DebugLog("🎉 กวาดไข่ทุกฟองในเซิร์ฟเวอร์นี้เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
+    task.wait(2) 
+end
+
+local function ExecuteServerHop()
+    DebugLog("🔄 กำลังย้ายเซิร์ฟเวอร์...")
+    
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+    local serversUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    
+    local success, result = pcall(function() return game:HttpGet(serversUrl) end)
+    
+    if success and result then
+        local decodeSuccess, decodedData = pcall(function() return HttpService:JSONDecode(result) end)
+        if decodeSuccess and decodedData and decodedData.data then
+            for _, serverInfo in ipairs(decodedData.data) do
+                if type(serverInfo) == "table" and serverInfo.playing < serverInfo.maxPlayers and serverInfo.id ~= currentJobId then
+                    DebugLog("🚀 วาร์ปไปที่เซิร์ฟเวอร์ผู้เล่น " .. tostring(serverInfo.playing) .. " คน...")
+                    TeleportService:TeleportToPlaceInstance(placeId, serverInfo.id, LP)
+                    task.wait(10)
+                end
+            end
+        end
+    end
+    
+    DebugLog("⚠️ ใช้งานระบบสุ่มย้ายเซิร์ฟเวอร์สำรอง...")
+    TeleportService:Teleport(placeId, LP)
+end
+
+local function ProcessSmartSweeperFirst()
+    -- 🛑 เช็คก่อนเลยว่าอยู่ในฟาร์มหรือเปล่า ถ้าใช่ให้ตัดจบการทำงานของไข่ทันที ป้องกันการ Hop มั่ว
+    if not isInLobby() then
+        DebugLog("🎮 [SYSTEM] ตรวจพบว่าอยู่ในด่านฟาร์ม -> ระงับระบบเก็บไข่และการ Hop ทันที!")
+        return true -- ส่งค่า true ให้ระบบฟาร์มหลักทำงานต่อเลย
+    end
+
+    DebugLog("==================================================")
+    DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
+    DebugLog("==================================================")
+
+    StartUIMonitor()
+
+    local Remote = GetCollectRemote()
+    if Remote then
+        local LivePrices = GetDynamicPrices()
+        local SortedEggs = ScanAndSortEggs(LivePrices)
+        CollectSmartly(SortedEggs, Remote)
+    end
+
+    DebugLog("\n--------------------------------------------------")
+    
+    if HitLimitDetected then
+        warn("🛑 จบการทำงาน: ตรวจพบ UI แจ้งเตือน Limit ระหว่างฟาร์มไข่!")
+        warn("สคริปต์กวาดของจนครบแล้ว จะ 'ไม่ทำการย้ายเซิร์ฟเวอร์' และไปฟาร์มด่านหลักต่อครับ")
+        return true -- ให้ไปฟาร์มด่านหลักต่อ
+    else
+        DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์หาไข่ต่อ...")
+        for i = 3, 1, -1 do
+            DebugLog("Hop ใน... " .. tostring(i))
+            task.wait(1)
+        end
+        ExecuteServerHop()
+        task.wait(9e9) -- หยุดรอการย้ายเซิร์ฟเวอร์
+        return false 
+    end
+end
+
 -- ==========================================
--- 🛠️ ANTI ERROR 277 / 773 (AUTO RECONNECT)
+-- [3] ANTI ERROR 277 / 773 (AUTO RECONNECT)
 -- ==========================================
 task.spawn(function()
     TeleportService.TeleportInitFailed:Connect(function()
@@ -67,7 +246,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [2] GLOBAL UTILITIES & SMART ROUTING
+-- [4] GLOBAL UTILITIES & SMART ROUTING
 -- ==========================================
 local function SafeNum(input)
     if type(input) == "number" then return math.floor(input) end
@@ -183,7 +362,44 @@ local function CheckAndGoLobbyIfRich()
 end
 
 -- ==========================================
--- [3] ANTI-LAG & SUPER UI KILLER
+-- [5] ⏳ IN-FARM TIMER MONITOR (HOP ระบบออกไปเก็บไข่)
+-- ==========================================
+local function StartFarmTimerMonitor()
+    local timeLimitSeconds = (CONFIG.FarmHoursBeforeHop or 1) * 3600
+    local totalMins = math.floor(timeLimitSeconds / 60)
+    local totalSecs = timeLimitSeconds % 60
+    
+    DebugLog("⏳ [TIMER] ตั้งเวลาฟาร์มไว้ที่: " .. tostring(CONFIG.FarmHoursBeforeHop) .. " ชั่วโมง (หรือ " .. tostring(totalMins) .. " นาที " .. tostring(totalSecs) .. " วินาที)")
+    
+    local startTime = os.time()
+
+    task.spawn(function()
+        while task.wait(1) do
+            if not isInLobby() then
+                local elapsedTime = os.time() - startTime
+                if elapsedTime >= timeLimitSeconds then
+                    DebugLog("⏳ [TIME LIMIT] ครบกำหนดฟาร์ม " .. tostring(CONFIG.FarmHoursBeforeHop) .. " ชั่วโมงแล้ว! กำลังบังคับ Hop ออกไปรีเซ็ตไข่...")
+                    
+                    pcall(function()
+                        local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
+                        if rf then
+                            if rf:FindFirstChild("ReturnToLobby") then rf.ReturnToLobby:InvokeServer() end
+                            if rf:FindFirstChild("LeaveGame") then rf.LeaveGame:InvokeServer() end
+                        end
+                    end)
+                    task.wait(1.5)
+                    pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
+                    task.wait(9e9)
+                end
+            else
+                startTime = os.time()
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- [6] ANTI-LAG & SUPER UI KILLER
 -- ==========================================
 task.spawn(function()
     while task.wait(120) do pcall(function() collectgarbage("collect") end) end
@@ -217,14 +433,13 @@ task.spawn(function()
     while task.wait(0.5) do
         pcall(function()
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-            huntAndDestroy(player:FindFirstChild("PlayerGui"))
+            huntAndDestroy(LP:FindFirstChild("PlayerGui"))
             huntAndDestroy(game:GetService("CoreGui"))
             if gethui then huntAndDestroy(gethui()) end
         end)
     end
 end)
 
--- 🛑 ระบบลบ UI บัคระดับ Frame-by-Frame
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local gameGui = LP.PlayerGui:FindFirstChild("GameGui")
@@ -280,7 +495,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [4] AFK & WEBHOOK LOG (🚀 NGROK BYPASS VERSION)
+-- [7] AFK & WEBHOOK LOG
 -- ==========================================
 task.spawn(function()
     local sg = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
@@ -322,7 +537,6 @@ local function updateLogData()
         local gemsAmount = tonumber((gemText:gsub(",", ""):match("%d+"))) or 0
         local hasRaff, hasLawn = GetTrueOwnedInventory()
 
-        -- 🛡️ ระบบส่งข้อมูลอัจฉริยะ (ส่งเมื่อเงินเพิ่ม หรือ ครบเวลา Force Update)
         if sNum > lastS or gemsAmount > lastG or (tick() - lastT) >= CONFIG.Interval then
             local payload = { 
                 device = CONFIG.DeviceName, 
@@ -335,7 +549,6 @@ local function updateLogData()
             }
             local jsonPayload = HttpService:JSONEncode(payload)
             
-            -- 🔴 รหัสผ่านลับสำหรับทะลวง Ngrok Warning Page
             local headers = {
                 ["Content-Type"] = "application/json",
                 ["ngrok-skip-browser-warning"] = "true" 
@@ -349,7 +562,6 @@ local function updateLogData()
                     Body = jsonPayload
                 })
             else
-                -- Fallback สำหรับบาง Executor
                 HttpService:PostAsync(
                     CONFIG.Url, 
                     jsonPayload, 
@@ -373,12 +585,12 @@ task.spawn(function()
     DebugLog("🚀 System Started (Ngrok Bypass Mode)")
     while true do 
         task.spawn(updateLogData)
-        task.wait(1) -- สแกนเช็คหน้าจอทุกๆ 1 วินาที
+        task.wait(1)
     end
 end)
 
 -- ==========================================
--- [5] SMART HYBRID CLICK ENGINE
+-- [8] SMART HYBRID CLICK ENGINE
 -- ==========================================
 local function ClickButton(guiObj)
     if not guiObj then return end
@@ -516,12 +728,11 @@ local function StartAutoSkip(restartSignalTable)
 end
 
 -- ==========================================
--- [6] ICE FARM ENGINE
+-- [9] ALL FARM ENGINES (ICE, SPACE, TOMATO, BGARDEN)
 -- ==========================================
 local function RunIceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    
     TripleLayerEquip("Rafflesia", "unit_rafflesia")
     
     local DATA = {
@@ -596,13 +807,9 @@ local function RunIceFarmMaster()
     end
 end
 
--- ==========================================
--- [7] SPACE FARM ENGINE
--- ==========================================
 local function RunSpaceFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    
     TripleLayerEquip("Lawnmower", "unit_lawnmower")
     
     local CENTER = Vector3.new(-17.668, -85.057, 30.373)
@@ -665,13 +872,9 @@ local function RunSpaceFarmMaster()
     end
 end
 
--- ==========================================
--- [8] TOMATO FARM ENGINE
--- ==========================================
 local function RunTomatoFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
-    
     TripleLayerEquip("Tomato", "unique_1")
     
     local isEnd = {value = false}
@@ -759,9 +962,6 @@ local function RunTomatoFarmMaster()
     end
 end
 
--- ==========================================
--- [9] BGARDEN FARM ENGINE
--- ==========================================
 local function RunBGardenFarmMaster()
     local rf = ReplicatedStorage:WaitForChild("RemoteFunctions")
     local re = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -979,158 +1179,22 @@ local function StartLobbyMasterEngine()
 end
 
 -- ==========================================
--- 🥚 [11] SMART SWEEPER V2 FUNCTIONS (ระบบไข่)
+-- [11] SYSTEM BOOTSTRAP
 -- ==========================================
-local HitLimitDetected = false 
-
-local function GetDynamicPrices()
-    DebugLog("📊 กำลังสแกนฐานข้อมูลราคาใน RAM...")
-    local priceMap = {}
-    local gcData = getgc(true)
-    
-    for _, obj in ipairs(gcData) do
-        if type(obj) == "table" then
-            pcall(function()
-                if obj.ID and type(obj.ID) == "string" and obj.AwardCurrencyAmount and type(obj.AwardCurrencyAmount) == "number" then
-                    priceMap[string.lower(obj.ID)] = obj.AwardCurrencyAmount
-                end
-            end)
-        end
-    end
-    return priceMap
-end
-
-local function StartUIMonitor()
-    task.spawn(function()
-        while true do
-            task.wait(0.5)
-            for _, ui in ipairs(LP.PlayerGui:GetDescendants()) do
-                if ui:IsA("TextLabel") or ui:IsA("TextButton") then
-                    if ui.Text and string.find(string.lower(ui.Text), "limit for this collectable") then
-                        HitLimitDetected = true
-                    end
-                end
-            end
-        end
-    end)
-end
-
-local function GetCollectRemote()
-    DebugLog("🔍 กำลังค้นหาปืนใหญ่ (RemoteEvent: CollectCollectable)...")
-    for _, instance in ipairs(game:GetDescendants()) do
-        if instance.Name == "CollectCollectable" and instance:IsA("RemoteEvent") then
-            return instance
-        end
-    end
-    return nil
-end
-
-local function ScanAndSortEggs(livePrices)
-    DebugLog("🌍 กำลังสแกนหาไข่ในแผนที่ และจัดเรียงจากแพงไปถูก...")
-    local itemsFound = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        local collectID = obj:GetAttribute("ID")
-        local itemType = obj:GetAttribute("ItemId")
-        if type(collectID) == "number" and type(itemType) == "string" then
-            local currentPrice = 0
-            local typeLower = string.lower(itemType)
-            for id, price in pairs(livePrices) do
-                if string.find(id, typeLower) then
-                    if price > currentPrice then currentPrice = price end
-                end
-            end
-            table.insert(itemsFound, { Object = obj, ID = collectID, Price = currentPrice, Name = itemType })
-        end
-    end
-    table.sort(itemsFound, function(a, b) return a.Price > b.Price end)
-    return itemsFound
-end
-
-local function CollectSmartly(itemList, remoteEvent)
-    if #itemList == 0 then
-        DebugLog("⚠️ แมพนี้เกลี้ยงแล้ว ไม่มีอะไรให้เก็บ")
-        return
-    end
-    DebugLog("🚀 เริ่มทำการดูดไข่ (กวาดทั้งแมพ ไล่จากแพงสุดไปถูกสุด)...")
-    local successCount = 0
-    for index, item in ipairs(itemList) do
-        remoteEvent:FireServer(item.ID)
-        successCount = successCount + 1
-        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
-        task.wait(0.05) 
-    end
-    DebugLog("🎉 กวาดไข่ทุกฟองในเซิร์ฟเวอร์นี้เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
-    task.wait(2) 
-end
-
-local function ExecuteServerHop()
-    DebugLog("🔄 กำลังย้ายเซิร์ฟเวอร์...")
-    local placeId = game.PlaceId
-    local currentJobId = game.JobId
-    local serversUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
-    local success, result = pcall(function() return game:HttpGet(serversUrl) end)
-    
-    if success and result then
-        local decodeSuccess, decodedData = pcall(function() return HttpService:JSONDecode(result) end)
-        if decodeSuccess and decodedData and decodedData.data then
-            for _, serverInfo in ipairs(decodedData.data) do
-                if type(serverInfo) == "table" and serverInfo.playing < serverInfo.maxPlayers and serverInfo.id ~= currentJobId then
-                    DebugLog("🚀 วาร์ปไปที่เซิร์ฟเวอร์ผู้เล่น " .. tostring(serverInfo.playing) .. " คน...")
-                    TeleportService:TeleportToPlaceInstance(placeId, serverInfo.id, LP)
-                    task.wait(10)
-                end
-            end
-        end
-    end
-    DebugLog("⚠️ ใช้งานระบบสุ่มย้ายเซิร์ฟเวอร์สำรอง...")
-    TeleportService:Teleport(placeId, LP)
-end
-
--- ==========================================
--- [12] CHECK LOCATION & SYSTEM BOOTSTRAP
--- ==========================================
-local function isInLobby()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    return map:FindFirstChild("Garden") ~= nil
-end
-
 DebugLog("⏳ [SYSTEM] รอให้เซิร์ฟเวอร์ยัดข้อมูลใส่กระเป๋า (6 วินาที)...")
 task.wait(6)
 
--- 🎯 แยกการทำงานชัดเจน! ถ้าอยู่หน้า Lobby ให้เก็บไข่ก่อน ถ้าอยู่ด่านฟาร์มให้ฟาร์มเลยไม่ต้องยุ่งกับไข่
+-- 🔥 เปิดระบบตั้งเวลาบังคับ Hop กลับไปเก็บไข่หลังจากฟาร์มครบเวลา
+StartFarmTimerMonitor()
+
 if isInLobby() then 
-    -- เราอยู่ใน Lobby: รันระบบไข่
-    DebugLog("==================================================")
-    DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
-    DebugLog("==================================================")
-
-    StartUIMonitor()
-    local Remote = GetCollectRemote()
-    if Remote then
-        local LivePrices = GetDynamicPrices()
-        local SortedEggs = ScanAndSortEggs(LivePrices)
-        CollectSmartly(SortedEggs, Remote)
-    end
-
-    DebugLog("\n--------------------------------------------------")
+    -- 🛑 สั่งรัน Smart Sweeper V2 ก่อนเริ่มทำงานระบบ Lobby เพื่อเก็บไข่ให้หมดก่อนเดินเข้าวงวาร์ป
+    local continueToFarm = ProcessSmartSweeperFirst()
     
-    if HitLimitDetected then
-        warn("🛑 จบการทำงาน: ตรวจพบ UI แจ้งเตือน Limit ระหว่างฟาร์มไข่!")
-        warn("สคริปต์กวาดของจนครบแล้ว จะ 'ไม่ทำการย้ายเซิร์ฟเวอร์' และไปฟาร์มด่านหลักต่อครับ")
-        StartLobbyMasterEngine() -- ส่งไม้ต่อให้ระบบหาห้องฟาร์ม / สุ่ม Lawn ตามปกติ
-    else
-        DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์หาไข่ต่อ...")
-        for i = 3, 1, -1 do
-            DebugLog("Hop ใน... " .. tostring(i))
-            task.wait(1)
-        end
-        ExecuteServerHop()
-        task.wait(9e9) -- หยุดรอการ Hop
+    if continueToFarm then
+        StartLobbyMasterEngine() 
     end
-
 else 
-    -- เราอยู่ในด่านฟาร์มแล้ว: ไม่ต้องเก็บไข่ ข้ามไปลุยฟาร์มทันที!
     local _, farmUnit, _ = GetRoutingPlan()
     DebugLog("🎮 [FARM] สแกนกระเป๋าเสร็จสิ้น: AI ตัดสินใจเล่นโหมด " .. farmUnit)
     
