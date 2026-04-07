@@ -1,4 +1,4 @@
--- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + EGG SWEEPER) ]] --
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V2) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -20,9 +20,9 @@ local CONFIG = getgenv().GardenConfig or {
     EnableDebug = true,
     
     -- ==========================================
-    -- 🥚 NEW CONFIG: ตั้งเวลาบังคับ Hop ออกไปเก็บไข่
+    -- ⏳ ตั้งเวลาบังคับ Hop ออกไปเก็บไข่
     -- ==========================================
-    FarmHoursBeforeHop = 1 -- ⏳ เวลาฟาร์มก่อนบังคับออกไปเก็บไข่ (หน่วยเป็นชั่วโมง) ใส่ทศนิยมได้
+    FarmHoursBeforeHop = 1 -- เวลาฟาร์มก่อนบังคับออกไปเก็บไข่ (หน่วยเป็นชั่วโมง) ใส่ทศนิยมได้
 }
 
 if getgenv().EnableHorst then
@@ -32,6 +32,7 @@ if getgenv().EnableHorst then
 end
 
 local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -48,8 +49,43 @@ local function DebugLog(msg)
 end
 
 -- =====================================================================
--- [2] 🥚 ULTIMATE EASTER SWEEPER (COLLECT EGG SYSTEM)
+-- [2] 🥚 SMART SWEEPER V2 (COLLECT ALL + SORT + HOP CONTROL)
 -- =====================================================================
+local HitLimitDetected = false 
+
+local function GetDynamicPrices()
+    DebugLog("📊 กำลังสแกนฐานข้อมูลราคาใน RAM...")
+    local priceMap = {}
+    local gcData = getgc(true)
+    
+    for _, obj in ipairs(gcData) do
+        if type(obj) == "table" then
+            pcall(function()
+                if obj.ID and type(obj.ID) == "string" and obj.AwardCurrencyAmount and type(obj.AwardCurrencyAmount) == "number" then
+                    priceMap[string.lower(obj.ID)] = obj.AwardCurrencyAmount
+                end
+            end)
+        end
+    end
+    return priceMap
+end
+
+local function StartUIMonitor()
+    task.spawn(function()
+        while not HitLimitDetected do
+            task.wait(0.5) 
+            for _, ui in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+                if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+                    if ui.Text and string.find(string.lower(ui.Text), "limit for this collectable") then
+                        HitLimitDetected = true
+                        DebugLog("🛑 [SYSTEM] ตรวจพบการแจ้งเตือน Limit ใน UI!")
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function GetCollectRemote()
     DebugLog("🔍 กำลังค้นหาปืนใหญ่ (RemoteEvent: CollectCollectable)...")
     for _, instance in ipairs(game:GetDescendants()) do
@@ -57,70 +93,129 @@ local function GetCollectRemote()
             return instance
         end
     end
+    DebugLog("❌ ไม่พบ Remote ในเซิร์ฟเวอร์นี้")
     return nil
 end
 
-local function ScanAllCollectables()
-    DebugLog("🌍 กำลังใช้เรดาร์สแกนหา Collectable ทั่วทั้งแมพ...")
-    local foundItems = {}
+local function ScanAndSortEggs(livePrices)
+    DebugLog("🌍 กำลังสแกนหาไข่ในแผนที่ และจัดเรียงจากแพงไปถูก...")
+    local itemsFound = {}
+    
     for _, obj in ipairs(Workspace:GetDescendants()) do
         local collectID = obj:GetAttribute("ID")
-        local itemType = obj:GetAttribute("ItemId") or "Unknown"
-        local collectionId = obj:GetAttribute("CollectionId")
+        local itemType = obj:GetAttribute("ItemId")
         
-        if type(collectID) == "number" then
-            table.insert(foundItems, {
-                Instance = obj,
+        if type(collectID) == "number" and type(itemType) == "string" then
+            local currentPrice = 0
+            local typeLower = string.lower(itemType)
+            
+            for id, price in pairs(livePrices) do
+                if string.find(id, typeLower) then
+                    if price > currentPrice then 
+                        currentPrice = price 
+                    end
+                end
+            end
+            
+            table.insert(itemsFound, {
+                Object = obj,
                 ID = collectID,
-                Name = itemType,
-                Collection = collectionId
+                Price = currentPrice,
+                Name = itemType
             })
         end
     end
-    DebugLog("✅ สแกนเสร็จสิ้น! พบของดรอปในแมพทั้งหมด: " .. tostring(#foundItems) .. " ชิ้น")
-    return foundItems
+    
+    table.sort(itemsFound, function(a, b)
+        return a.Price > b.Price
+    end)
+    
+    DebugLog("✅ สแกนเสร็จสิ้น! พบไข่ทั้งหมด " .. tostring(#itemsFound) .. " ชิ้น")
+    return itemsFound
 end
 
-local function CollectEverything(itemList, remoteEvent)
+local function CollectSmartly(itemList, remoteEvent)
     if #itemList == 0 then
-        DebugLog("⚠️ แมพนี้เกลี้ยงแล้ว ไม่มีอะไรให้เก็บเลย")
+        DebugLog("⚠️ แมพนี้เกลี้ยงแล้ว ไม่มีอะไรให้เก็บ")
         return
     end
 
-    DebugLog("🚀 เริ่มทำการดูดของเข้ากระเป๋า...")
+    DebugLog("🚀 เริ่มทำการดูดไข่ (กวาดทั้งแมพ ไล่จากแพงสุดไปถูกสุด)...")
     local successCount = 0
+    
     for index, item in ipairs(itemList) do
         remoteEvent:FireServer(item.ID)
         successCount = successCount + 1
-        task.wait(0.05) -- ดีเลย์กันเซิร์ฟเวอร์เตะ
+        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
+        task.wait(0.05) 
     end
-    DebugLog("🎉 ดูดของเสร็จสิ้น! กวาดไปทั้งหมด " .. tostring(successCount) .. " ชิ้น!")
-    task.wait(2)
+    
+    DebugLog("🎉 กวาดไข่ทุกฟองในเซิร์ฟเวอร์นี้เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
+    task.wait(2) 
 end
 
-local function StartAutoSweepEggs()
-    DebugLog("🌟 รันระบบ ULTIMATE EASTER SWEEPER 🌟")
-    task.wait(5) -- รอ 5 วินาทีให้เซิร์ฟเวอร์เสกไข่ลงพื้นให้ครบก่อน
+local function ExecuteServerHop()
+    DebugLog("🔄 กำลังย้ายเซิร์ฟเวอร์เพื่อหาไข่ต่อ...")
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+    local serversUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
     
+    local success, result = pcall(function() return game:HttpGet(serversUrl) end)
+    
+    if success and result then
+        local decodeSuccess, decodedData = pcall(function() return HttpService:JSONDecode(result) end)
+        if decodeSuccess and decodedData and decodedData.data then
+            for _, serverInfo in ipairs(decodedData.data) do
+                if type(serverInfo) == "table" and serverInfo.playing < serverInfo.maxPlayers and serverInfo.id ~= currentJobId then
+                    DebugLog("🚀 วาร์ปไปที่เซิร์ฟเวอร์ผู้เล่น " .. tostring(serverInfo.playing) .. " คน...")
+                    TeleportService:TeleportToPlaceInstance(placeId, serverInfo.id, LocalPlayer)
+                    task.wait(10)
+                end
+            end
+        end
+    end
+    
+    DebugLog("⚠️ ใช้งานระบบสุ่มย้ายเซิร์ฟเวอร์สำรอง...")
+    TeleportService:Teleport(placeId, LocalPlayer)
+end
+
+local function StartSmartAutoFarm()
+    DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
+    task.wait(5)
+    
+    StartUIMonitor()
+
     local Remote = GetCollectRemote()
     if Remote then
-        local ItemsOnMap = ScanAllCollectables()
-        CollectEverything(ItemsOnMap, Remote)
+        local LivePrices = GetDynamicPrices()
+        local SortedEggs = ScanAndSortEggs(LivePrices)
+        CollectSmartly(SortedEggs, Remote)
     end
-    DebugLog("🛑 เก็บไข่เสร็จสิ้น! กำลังรันระบบฟาร์มหลักต่อ...")
+
+    if HitLimitDetected then
+        DebugLog("🛑 จบการทำงานไข่: ตรวจพบ Limit ระหว่างฟาร์ม จะทำการข้ามไปฟาร์มด่านหลัก!")
+    else
+        DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์...")
+        for i = 3, 1, -1 do
+            DebugLog("Hop ใน... " .. tostring(i))
+            task.wait(1)
+        end
+        ExecuteServerHop()
+        task.wait(9e9) -- หยุดสคริปต์ระหว่างรอวาร์ป ป้องกันเกมทำงานซ้อน
+    end
 end
 
 -- รันระบบเก็บไข่ทันทีเมื่อเริ่มสคริปต์
-StartAutoSweepEggs()
+StartSmartAutoFarm()
 
 -- ==========================================
 -- [3] 🛠️ ANTI ERROR 277 / 773 (AUTO RECONNECT)
 -- ==========================================
 task.spawn(function()
-    game:GetService("TeleportService").TeleportInitFailed:Connect(function()
+    TeleportService.TeleportInitFailed:Connect(function()
         DebugLog("⚠️ บัควาร์ป (Teleport Failed) ตรวจพบ! กำลังวาร์ปใหม่...")
         task.wait(2)
-        pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
+        pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
     end)
     
     while task.wait(1) do
@@ -130,7 +225,7 @@ task.spawn(function()
                 DebugLog("⚠️ ปิดหน้าต่าง Error เกม (รวมถึง 277): " .. tostring(msg))
                 GuiService:ClearError()
                 task.wait(2)
-                pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
+                pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
             end
         end)
     end
@@ -245,7 +340,7 @@ local function CheckAndGoLobbyIfRich()
             end
         end)
         task.wait(1.5)
-        pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
+        pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
         task.wait(9e9) 
         return true
     end
@@ -271,9 +366,8 @@ local function StartFarmTimerMonitor()
             if not isInLobby() then
                 local elapsedTime = os.time() - startTime
                 if elapsedTime >= timeLimitSeconds then
-                    DebugLog("⏳ [TIME LIMIT] ครบกำหนดฟาร์ม " .. tostring(CONFIG.FarmHoursBeforeHop) .. " ชั่วโมงแล้ว! กำลังบังคับ Hop ออกไปเก็บไข่...")
+                    DebugLog("⏳ [TIME LIMIT] ครบกำหนดฟาร์ม " .. tostring(CONFIG.FarmHoursBeforeHop) .. " ชั่วโมงแล้ว! กำลังบังคับ Hop ออกไปรีเซ็ตไข่...")
                     
-                    -- บังคับ LeaveGame หรือ Teleport ออกไปเริ่มใหม่ (เพื่อโหลดสคริปต์ดึงไข่ใหม่)
                     pcall(function()
                         local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions")
                         if rf then
@@ -282,8 +376,8 @@ local function StartFarmTimerMonitor()
                         end
                     end)
                     task.wait(1.5)
-                    pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
-                    task.wait(9e9) -- หยุดการทำงานของ Thread ทันทีที่สั่งวาร์ป
+                    pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
+                    task.wait(9e9)
                 end
             else
                 -- ถ้าอยู่ Lobby ให้รีเซ็ตเวลา
