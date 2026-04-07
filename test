@@ -1,4 +1,4 @@
--- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V2 INTEGRATION) ]] --
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + V2 AUTO-DETECT LOBBY) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -7,18 +7,18 @@ end
 getgenv().FarmRockbottomActive = true
 
 -- ==========================================
--- [1] MASTER CONFIGURATION (ดึงจากตัวรัน)
+-- [1] MASTER CONFIGURATION
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120,
+    Interval = 120, 
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
     ClickMode = "Fire", 
     EnableDebug = true,
-    FarmHoursBeforeHop = 1 
+    FarmHoursBeforeHop = 1
 }
 
 if getgenv().EnableHorst then
@@ -44,8 +44,15 @@ local function DebugLog(msg)
     if CONFIG.EnableDebug then print("[🐞 BGARDEN DEBUG] " .. tostring(msg)) end
 end
 
+-- 🎯 ฟังก์ชันเช็คสถานะแมพ (ประกาศไว้บนสุดเพื่อให้ทุกระบบเรียกใช้ได้)
+local function isInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return false end
+    return map:FindFirstChild("Garden") ~= nil
+end
+
 -- =====================================================================
--- [2] 🥚 SCRIPT: SMART SWEEPER V2 (เก็บไข่อันดับแรกสุด)
+-- [2] 🥚 SCRIPT: SMART SWEEPER V2 (ตรวจจับ Lobby ก่อนเก็บไข่)
 -- =====================================================================
 local HitLimitDetected = false 
 
@@ -178,6 +185,12 @@ local function ExecuteServerHop()
 end
 
 local function ProcessSmartSweeperFirst()
+    -- 🛑 เช็คก่อนเลยว่าอยู่ในฟาร์มหรือเปล่า ถ้าใช่ให้ตัดจบการทำงานของไข่ทันที ป้องกันการ Hop มั่ว
+    if not isInLobby() then
+        DebugLog("🎮 [SYSTEM] ตรวจพบว่าอยู่ในด่านฟาร์ม -> ระงับระบบเก็บไข่และการ Hop ทันที!")
+        return true -- ส่งค่า true ให้ระบบฟาร์มหลักทำงานต่อเลย
+    end
+
     DebugLog("==================================================")
     DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
     DebugLog("==================================================")
@@ -196,7 +209,7 @@ local function ProcessSmartSweeperFirst()
     if HitLimitDetected then
         warn("🛑 จบการทำงาน: ตรวจพบ UI แจ้งเตือน Limit ระหว่างฟาร์มไข่!")
         warn("สคริปต์กวาดของจนครบแล้ว จะ 'ไม่ทำการย้ายเซิร์ฟเวอร์' และไปฟาร์มด่านหลักต่อครับ")
-        return true -- ส่งค่า true เพื่อบอกให้ระบบฟาร์มด่านหลักทำงานต่อ
+        return true -- ให้ไปฟาร์มด่านหลักต่อ
     else
         DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์หาไข่ต่อ...")
         for i = 3, 1, -1 do
@@ -351,12 +364,6 @@ end
 -- ==========================================
 -- [5] ⏳ IN-FARM TIMER MONITOR (HOP ระบบออกไปเก็บไข่)
 -- ==========================================
-local function isInLobby()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    return map:FindFirstChild("Garden") ~= nil
-end
-
 local function StartFarmTimerMonitor()
     local timeLimitSeconds = (CONFIG.FarmHoursBeforeHop or 1) * 3600
     local startTime = os.time()
@@ -1076,15 +1083,20 @@ local function StartLobbyMasterEngine()
             local targetMapName, plan, shouldRoll = GetRoutingPlan()
             
             if not IsInHotbar(plan) then
+                DebugLog("🔄 [LOBBY] ถือตัวผิด! ต้องสวมใส่: " .. plan)
                 if plan == "Rafflesia" then TripleLayerEquip("Rafflesia", "unit_rafflesia")
                 elseif plan == "Lawnmower" then TripleLayerEquip("Lawnmower", "unit_lawnmower")
                 else TripleLayerEquip("Tomato", "unique_1") end
                 
                 task.wait(1.5)
-                if not IsInHotbar(plan) then task.wait(2); return end
+                if not IsInHotbar(plan) then
+                    DebugLog("❌ [LOBBY] ใส่ตัว " .. plan .. " ไม่สำเร็จ! วนลูปพยายามใส่ใหม่...")
+                    task.wait(2); return 
+                end
             end
 
             if shouldRoll and seedsAmount >= 8500 then
+                DebugLog("🎰 [LOBBY] เงินมี " .. tostring(seedsAmount) .. " (เป้า 8500) กำลังสุ่มกล่อง Tropical 10 กล่อง...")
                 rf.BuyUnitBox:InvokeServer("ub_tropical", 10)
                 task.wait(8) 
             else
@@ -1092,6 +1104,7 @@ local function StartLobbyMasterEngine()
                 local pID = math.random(5, 8)
                 
                 if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+                    DebugLog("🚶 [LOBBY] สวมใส่เป๊ะแล้ว กำลังเดินไปวาร์ปที่ " .. targetMapName)
                     LP.Character.HumanoidRootPart.CFrame = CFrame.new(pads[pID - 4], 71.7, 788.8)
                     task.wait(5.5) 
                     rf["LobbySetMap_" .. pID]:InvokeServer(targetMapName)
