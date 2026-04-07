@@ -1,4 +1,4 @@
--- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V2) ]] --
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V3.5) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -49,7 +49,7 @@ local function DebugLog(msg)
 end
 
 -- =====================================================================
--- [2] 🥚 SMART SWEEPER V2 (COLLECT ALL + SORT + HOP CONTROL)
+-- [2] 🥚 SMART SWEEPER V3.5 (COLLECT ALL + SORT + GRACE PERIOD LIMIT CONTROL)
 -- =====================================================================
 local HitLimitDetected = false 
 
@@ -72,13 +72,19 @@ end
 
 local function StartUIMonitor()
     task.spawn(function()
-        while not HitLimitDetected do
-            task.wait(0.5) 
+        while true do
+            task.wait(0.1) -- ⚡ ปรับความถี่เพื่อจับภาพ UI แบบ Real-time
+            
             for _, ui in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
                 if ui:IsA("TextLabel") or ui:IsA("TextButton") then
-                    if ui.Text and string.find(string.lower(ui.Text), "limit for this collectable") then
-                        HitLimitDetected = true
-                        DebugLog("🛑 [SYSTEM] ตรวจพบการแจ้งเตือน Limit ใน UI!")
+                    if ui.Text then
+                        local textLower = string.lower(ui.Text)
+                        if string.find(textLower, "limit") and string.find(textLower, "collectable") then
+                            if not HitLimitDetected then
+                                HitLimitDetected = true
+                                DebugLog("🛑 [SYSTEM] ตรวจพบการแจ้งเตือน Limit ใน UI! เริ่มเปิดระบบ Grace Period...")
+                            end
+                        end
                     end
                 end
             end
@@ -141,17 +147,40 @@ local function CollectSmartly(itemList, remoteEvent)
     end
 
     DebugLog("🚀 เริ่มทำการดูดไข่ (กวาดทั้งแมพ ไล่จากแพงสุดไปถูกสุด)...")
+    
     local successCount = 0
+    local limitStartTime = nil 
     
     for index, item in ipairs(itemList) do
+        -- ⏱️ ระบบตรวจสอบเบรคฉุกเฉิน (Grace Period 5 วินาที)
+        if HitLimitDetected then
+            if not limitStartTime then
+                limitStartTime = tick()
+                DebugLog("⚠️ [LIMIT DETECTED] ระบบจะฝืนเก็บต่อไปอีก 5 วินาทีเพื่อเก็บตก...")
+            end
+
+            local timePassed = tick() - limitStartTime
+            if timePassed >= 5 then
+                DebugLog("🛑 ครบกำหนด 5 วินาทีแล้ว! ตัดการยิง Remote ทันที")
+                break
+            end
+        end
+
         remoteEvent:FireServer(item.ID)
         successCount = successCount + 1
-        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
+        
+        if limitStartTime then
+            local timeLeft = math.max(0, 5 - (tick() - limitStartTime))
+            DebugLog(string.format("  💎 [%.1fs Left] เก็บ: %s | ราคา: %d", timeLeft, item.Name, item.Price))
+        else
+            DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
+        end
+        
         task.wait(0.05) 
     end
     
-    DebugLog("🎉 กวาดไข่ทุกฟองในเซิร์ฟเวอร์นี้เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
-    task.wait(2) 
+    DebugLog("🎉 การกวาดไข่เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
+    task.wait(1.5) -- รอ UI ดีเลย์
 end
 
 local function ExecuteServerHop()
@@ -180,7 +209,7 @@ local function ExecuteServerHop()
 end
 
 local function StartSmartAutoFarm()
-    DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
+    DebugLog("🌟 รันระบบ SMART SWEEPER V3.5 (COLLECT ALL + 5s GRACE PERIOD) 🌟")
     task.wait(5)
     
     StartUIMonitor()
@@ -193,7 +222,7 @@ local function StartSmartAutoFarm()
     end
 
     if HitLimitDetected then
-        DebugLog("🛑 จบการทำงานไข่: ตรวจพบ Limit ระหว่างฟาร์ม จะทำการข้ามไปฟาร์มด่านหลัก!")
+        DebugLog("🛑 จบการทำงานไข่: ตรวจพบ Limit ระหว่างฟาร์ม จะทำการข้ามไปฟาร์มด่านหลักทันที!")
     else
         DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์...")
         for i = 3, 1, -1 do
@@ -362,7 +391,6 @@ local function StartFarmTimerMonitor()
 
     task.spawn(function()
         while task.wait(1) do
-            -- หากไม่ได้อยู่ใน Lobby (หมายถึงกำลังฟาร์มอยู่) ให้เริ่มนับเวลา
             if not isInLobby() then
                 local elapsedTime = os.time() - startTime
                 if elapsedTime >= timeLimitSeconds then
@@ -380,7 +408,6 @@ local function StartFarmTimerMonitor()
                     task.wait(9e9)
                 end
             else
-                -- ถ้าอยู่ Lobby ให้รีเซ็ตเวลา
                 startTime = os.time()
             end
         end
