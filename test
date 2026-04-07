@@ -1,4 +1,4 @@
--- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V7) ]] --
+-- [[ 🍃 BGARDEN FARM: FULL EXPANDED VERSION (MASTER SCRIPT + SMART SWEEPER V2 INTEGRATION) ]] --
 repeat task.wait() until game:IsLoaded()
 
 if getgenv().FarmRockbottomActive then
@@ -7,18 +7,18 @@ end
 getgenv().FarmRockbottomActive = true
 
 -- ==========================================
--- [1] MASTER CONFIGURATION
+-- [1] MASTER CONFIGURATION (ดึงจากตัวรัน)
 -- ==========================================
 local CONFIG = getgenv().GardenConfig or {
     DeviceName = "dusfaaq", 
     Url = "https://maisha-shamefaced-sharda.ngrok-free.dev/update", 
-    Interval = 120, 
+    Interval = 120,
     EnableWebhookLog = true,
     GameName = "Garden TD",
     SelectMap = "AutoSeed", 
     ClickMode = "Fire", 
     EnableDebug = true,
-    FarmHoursBeforeHop = 1 -- (สามารถปล่อยทิ้งไว้ได้ ระบบ Hop ในด่านถูกปิดไปแล้วในส่วนของไข่)
+    FarmHoursBeforeHop = 1 
 }
 
 if getgenv().EnableHorst then
@@ -45,10 +45,12 @@ local function DebugLog(msg)
 end
 
 -- =====================================================================
--- [2] 🥚 SMART SWEEPER V7 (SWEEP ALL -> AUTO FARM) ไม่มีการ Hop
+-- [2] 🥚 SCRIPT: SMART SWEEPER V2 (เก็บไข่อันดับแรกสุด)
 -- =====================================================================
+local HitLimitDetected = false 
+
 local function GetDynamicPrices()
-    DebugLog("📊 กำลังสแกนฐานข้อมูลราคาไข่ใน RAM...")
+    DebugLog("📊 กำลังสแกนฐานข้อมูลราคาใน RAM...")
     local priceMap = {}
     local gcData = getgc(true)
     
@@ -64,6 +66,22 @@ local function GetDynamicPrices()
     return priceMap
 end
 
+local function StartUIMonitor()
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            
+            for _, ui in ipairs(LP.PlayerGui:GetDescendants()) do
+                if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+                    if ui.Text and string.find(string.lower(ui.Text), "limit for this collectable") then
+                        HitLimitDetected = true
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function GetCollectRemote()
     DebugLog("🔍 กำลังค้นหาปืนใหญ่ (RemoteEvent: CollectCollectable)...")
     for _, instance in ipairs(game:GetDescendants()) do
@@ -71,7 +89,7 @@ local function GetCollectRemote()
             return instance
         end
     end
-    DebugLog("❌ ไม่พบ Remote แจ้งเก็บของในเซิร์ฟเวอร์นี้")
+    DebugLog("❌ ไม่พบ Remote ในเซิร์ฟเวอร์นี้")
     return nil
 end
 
@@ -118,25 +136,54 @@ local function CollectSmartly(itemList, remoteEvent)
         return
     end
 
-    DebugLog("🚀 เริ่มทำการกวาดไข่ (ระบบทะลวง: ยิงทุกฟอง ไม่มีการเบรก)...")
+    DebugLog("🚀 เริ่มทำการดูดไข่ (กวาดทั้งแมพ ไล่จากแพงสุดไปถูกสุด)...")
     local successCount = 0
     
     for index, item in ipairs(itemList) do
         remoteEvent:FireServer(item.ID)
         successCount = successCount + 1
         
-        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ชนิด: %s | ราคา: %d", index, #itemList, item.Name, item.Price))
-        task.wait(0.05) -- ป้องกันโดนเซิร์ฟเวอร์เตะฐานส่งข้อมูลไวเกิน
+        DebugLog(string.format("  💎 [เก็บฟองที่ %d/%d] ราคาประเมิน: %d | ชนิด: %s", index, #itemList, item.Price, item.Name))
+        task.wait(0.05) 
     end
     
-    DebugLog("🎉 การกวาดไข่เสร็จสิ้น 100%! ส่งคำสั่งไปทั้งหมด " .. tostring(successCount) .. " ชิ้น")
+    DebugLog("🎉 กวาดไข่ทุกฟองในเซิร์ฟเวอร์นี้เสร็จสิ้น! ส่งคำสั่งไป " .. tostring(successCount) .. " ชิ้น")
     task.wait(2) 
 end
 
-local function StartSmartAutoFarm()
-    DebugLog("🌟 รันระบบ SMART SWEEPER V7 (SWEEP & FARM MODE) 🌟")
-    task.wait(5)
+local function ExecuteServerHop()
+    DebugLog("🔄 กำลังย้ายเซิร์ฟเวอร์...")
     
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+    local serversUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    
+    local success, result = pcall(function() return game:HttpGet(serversUrl) end)
+    
+    if success and result then
+        local decodeSuccess, decodedData = pcall(function() return HttpService:JSONDecode(result) end)
+        if decodeSuccess and decodedData and decodedData.data then
+            for _, serverInfo in ipairs(decodedData.data) do
+                if type(serverInfo) == "table" and serverInfo.playing < serverInfo.maxPlayers and serverInfo.id ~= currentJobId then
+                    DebugLog("🚀 วาร์ปไปที่เซิร์ฟเวอร์ผู้เล่น " .. tostring(serverInfo.playing) .. " คน...")
+                    TeleportService:TeleportToPlaceInstance(placeId, serverInfo.id, LP)
+                    task.wait(10)
+                end
+            end
+        end
+    end
+    
+    DebugLog("⚠️ ใช้งานระบบสุ่มย้ายเซิร์ฟเวอร์สำรอง...")
+    TeleportService:Teleport(placeId, LP)
+end
+
+local function ProcessSmartSweeperFirst()
+    DebugLog("==================================================")
+    DebugLog("🌟 รันระบบ SMART SWEEPER V2 (COLLECT ALL + SORT) 🌟")
+    DebugLog("==================================================")
+
+    StartUIMonitor()
+
     local Remote = GetCollectRemote()
     if Remote then
         local LivePrices = GetDynamicPrices()
@@ -144,15 +191,26 @@ local function StartSmartAutoFarm()
         CollectSmartly(SortedEggs, Remote)
     end
 
-    DebugLog("✅ จบกระบวนการเก็บไข่ สคริปต์จะนำทางไปฟาร์มด่านหลักต่อทันที!")
-    DebugLog("---------------------------------------------------------")
+    DebugLog("\n--------------------------------------------------")
+    
+    if HitLimitDetected then
+        warn("🛑 จบการทำงาน: ตรวจพบ UI แจ้งเตือน Limit ระหว่างฟาร์มไข่!")
+        warn("สคริปต์กวาดของจนครบแล้ว จะ 'ไม่ทำการย้ายเซิร์ฟเวอร์' และไปฟาร์มด่านหลักต่อครับ")
+        return true -- ส่งค่า true เพื่อบอกให้ระบบฟาร์มด่านหลักทำงานต่อ
+    else
+        DebugLog("✅ แมพนี้สะอาดเกลี้ยง และยังไม่ติด Limit! เตรียมย้ายเซิร์ฟเวอร์หาไข่ต่อ...")
+        for i = 3, 1, -1 do
+            DebugLog("Hop ใน... " .. tostring(i))
+            task.wait(1)
+        end
+        ExecuteServerHop()
+        task.wait(9e9) -- หยุดรอการย้ายเซิร์ฟเวอร์
+        return false 
+    end
 end
 
--- รันระบบเก็บไข่ทันทีเมื่อเริ่มสคริปต์
-StartSmartAutoFarm()
-
 -- ==========================================
--- [3] 🛠️ ANTI ERROR 277 / 773 (AUTO RECONNECT)
+-- [3] ANTI ERROR 277 / 773 (AUTO RECONNECT)
 -- ==========================================
 task.spawn(function()
     TeleportService.TeleportInitFailed:Connect(function()
@@ -290,15 +348,15 @@ local function CheckAndGoLobbyIfRich()
     return false
 end
 
+-- ==========================================
+-- [5] ⏳ IN-FARM TIMER MONITOR (HOP ระบบออกไปเก็บไข่)
+-- ==========================================
 local function isInLobby()
     local map = Workspace:FindFirstChild("Map")
     if not map then return false end
     return map:FindFirstChild("Garden") ~= nil
 end
 
--- ==========================================
--- [5] ⏳ IN-FARM TIMER MONITOR (HOP ระบบออกไปเก็บไข่)
--- ==========================================
 local function StartFarmTimerMonitor()
     local timeLimitSeconds = (CONFIG.FarmHoursBeforeHop or 1) * 3600
     local startTime = os.time()
@@ -363,7 +421,7 @@ task.spawn(function()
     while task.wait(0.5) do
         pcall(function()
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-            huntAndDestroy(player:FindFirstChild("PlayerGui"))
+            huntAndDestroy(LP:FindFirstChild("PlayerGui"))
             huntAndDestroy(game:GetService("CoreGui"))
             if gethui then huntAndDestroy(gethui()) end
         end)
@@ -905,6 +963,7 @@ local function RunBGardenFarmMaster()
     }
     
     local isEnd = {value = false}
+
     re.ShowGameEnd.OnClientEvent:Connect(function() isEnd.value = true end)
 
     local function monitorBaseHP()
@@ -929,9 +988,11 @@ local function RunBGardenFarmMaster()
 
     local function deployLawnmower(pathIndex, config, lawName)
         if isEnd.value then return end
+        
         local offset = 1.5
         local randomX = (math.random() * (offset * 2)) - offset
         local randomZ = (math.random() * (offset * 2)) - offset
+
         local finalPos = Vector3.new(config.pos.X + randomX, config.pos.Y, config.pos.Z + randomZ)
         local finalCF = CFrame.new(finalPos) * (config.cf - config.cf.Position)
         
@@ -1044,26 +1105,6 @@ local function StartLobbyMasterEngine()
     end
     
     local _, farmUnit, _ = GetRoutingPlan()
-    if farmUnit == "Rafflesia" then RunIceFarmMaster()
-    elseif farmUnit == "Lawnmower" then 
-        if CONFIG.SelectMap == "BGarden" or CONFIG.SelectMap == "AutoSeed" then RunBGardenFarmMaster() else RunSpaceFarmMaster() end
-    else RunTomatoFarmMaster() end
-end
-
--- ==========================================
--- [11] SYSTEM BOOTSTRAP (STARTER)
--- ==========================================
-DebugLog("⏳ [SYSTEM] รอให้เซิร์ฟเวอร์ยัดข้อมูลใส่กระเป๋า (6 วินาที)...")
-task.wait(6)
-
--- 🔥 เปิดใช้งานระบบจับเวลาฟาร์มแบบ Background
-StartFarmTimerMonitor()
-
-if isInLobby() then 
-    StartLobbyMasterEngine() 
-else 
-    local _, farmUnit, _ = GetRoutingPlan()
-    DebugLog("🎮 [FARM] สแกนกระเป๋าเสร็จสิ้น: AI ตัดสินใจเล่นโหมด " .. farmUnit)
     
     if farmUnit == "Rafflesia" then RunIceFarmMaster()
     elseif farmUnit == "Lawnmower" then 
@@ -1073,4 +1114,34 @@ else
             RunSpaceFarmMaster() 
         end
     else RunTomatoFarmMaster() end
+end
+
+-- ==========================================
+-- [11] SYSTEM BOOTSTRAP
+-- ==========================================
+DebugLog("⏳ [SYSTEM] รอให้เซิร์ฟเวอร์ยัดข้อมูลใส่กระเป๋า (6 วินาที)...")
+task.wait(6)
+
+-- 🔥 สั่งรัน Smart Sweeper V2 ก่อนเริ่มทำงานระบบฟาร์ม
+local continueToFarm = ProcessSmartSweeperFirst()
+
+if continueToFarm then
+    -- เปิดระบบตั้งเวลาบังคับ Hop กลับไปเก็บไข่หลังจากฟาร์มครบเวลา
+    StartFarmTimerMonitor()
+
+    if isInLobby() then 
+        StartLobbyMasterEngine() 
+    else 
+        local _, farmUnit, _ = GetRoutingPlan()
+        DebugLog("🎮 [FARM] สแกนกระเป๋าเสร็จสิ้น: AI ตัดสินใจเล่นโหมด " .. farmUnit)
+        
+        if farmUnit == "Rafflesia" then RunIceFarmMaster()
+        elseif farmUnit == "Lawnmower" then 
+            if CONFIG.SelectMap == "BGarden" or CONFIG.SelectMap == "AutoSeed" then 
+                RunBGardenFarmMaster() 
+            else 
+                RunSpaceFarmMaster() 
+            end
+        else RunTomatoFarmMaster() end
+    end
 end
