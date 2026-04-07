@@ -1,32 +1,26 @@
--- ประกาศฟังก์ชันสำหรับการซื้อไอเทม 20 ครั้ง
-local function BuyItemTwentyTimes()
+-- กำหนดชุดข้อมูลที่จะส่งไปให้ Server
+local args = {
+    [1] = "normal",
+    [2] = 325,
+    [3] = "325-3",
+}
+
+print("เริ่มต้นกระบวนการซื้อไอเทมจำนวน 30 ครั้ง...")
+
+-- ดึงตำแหน่ง WTBuyItem จากที่สแกนเจอมาใช้งาน
+local buyFunction = game:GetService("ReplicatedStorage").RemoteFunctions.WTBuyItem
+
+-- เริ่มวนลูป 30 ครั้ง
+for currentCount = 1, 30 do
     
-    -- กำหนดชุดข้อมูล (Arguments) ที่จะส่งไปให้ Server
-    local args = {
-        [1] = "normal",
-        [2] = 325,
-        [3] = "325-3",
-    }
+    -- ทำการเรียกใช้ฟังก์ชันเพื่อซื้อไอเทม
+    local result = buyFunction:InvokeServer(unpack(args))
     
-    print("เริ่มกระบวนการซื้อไอเทมจำนวน 20 ครั้ง...")
+    print("ซื้อครั้งที่ " .. tostring(currentCount) .. " | ผลลัพธ์: " .. tostring(result))
     
-    -- เริ่มวนลูปตั้งแต่ 1 ถึง 20
-    for currentCount = 1, 20 do
-        
-        -- เรียกใช้งาน RemoteFunction ไปยัง Server
-        local result = game.WTBuyItem:InvokeServer(unpack(args))
-        
-        -- แสดงผลลัพธ์ในแต่ละรอบ
-        print("การทำงานรอบที่ " .. tostring(currentCount) .. " | ผลลัพธ์: " .. tostring(result))
-        
-        -- หน่วงเวลา 0.1 วินาที เพื่อป้องกันไม่ให้เกมค้าง หรือโดนเตะออกจากเซิร์ฟเวอร์
-        task.wait(0.1)
-        
-    end
-    
-    print("กระบวนการทำงานครบ 20 ครั้งเสร็จสมบูรณ์แล้ว!")
+    -- หน่วงเวลา 0.1 วินาทีเพื่อความเสถียร
+    task.wait(0.1)
     
 end
 
--- วิธีเรียกใช้งานฟังก์ชัน:
--- BuyItemTwentyTimes()
+print("กระบวนการทำงานเสร็จสมบูรณ์!")
