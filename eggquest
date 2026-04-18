@@ -1,0 +1,955 @@
+-- =====================================================================
+-- 🥚 SCRIPT: EASTER BOT V71 [THE ENGLISH OBSERVER - FULL UNROLLED]
+-- =====================================================================
+
+-- 🛑 1. ANTI-DUPLICATION (Prevent double execution)
+if getgenv().EasterBotRunning then
+    warn("❌ [ERROR] Script is already running! (Anti-Duplication active)")
+    return
+end
+getgenv().EasterBotRunning = true
+
+repeat 
+    task.wait() 
+until game:IsLoaded()
+
+task.wait(4) -- Wait 4 seconds for server/UI synchronization
+
+--// SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- =====================================================================
+-- ⚙️ 2. CONFIGURATION
+-- =====================================================================
+local CONFIG = {
+    DEBUG_MODE = true,           
+    UI_CheckRate = 3,            
+    
+    -- EP1
+    TargetUnit = "unit_egg_catapult",
+    ToolName = "Eggapult Plant",
+    EP1_Name = "Colorful Egg",
+    
+    -- EP2
+    ObbyPlatform = Vector3.new(124.720245, 687.629456 + 1.5, 2169.875),
+    ObbyDoor = Vector3.new(120.993431, 693.879456, 2170.04053),
+    EP2_WaitTime = 6,            
+    EP2_Name = "Checkpoint Egg",
+    
+    -- EP3 & EP4
+    Summon_Amount = 10,          
+    Summon_Speed = 1,            
+    Limit_Seeds = 100,           
+    EP3_Name = "Beehive Egg",
+    EP4_Name = "Mushroom Egg",
+    
+    -- EP5
+    EP5_Map = "map_farm",
+    EP5_Pos = Vector3.new(-331.6623229980469, 61.68030548095703, -134.0538330078125),
+    EP5_Name = "Basic Egg",
+
+    -- EP6
+    EP6_Map = "map_jungle",
+    EP6_Pos = Vector3.new(-336.0965881347656, 61.68030548095703, -123.19677734375),
+    EP6_Name = "Enchanted Egg",
+    
+    -- EP7
+    EP7_Map = "map_island",
+    EP7_Pos = Vector3.new(-72.63653564453125, -30.687498092651367, 124.87454223632812),
+    EP7_Name = "Island", 
+    
+    -- EP8
+    EP8_Map = "map_toxic",
+    EP8_Pos = Vector3.new(-24.73055076599121, 1.9999998807907104, 313.8504638671875),
+    EP8_Name = "Toxic"
+}
+
+-- QUEST STATES
+local STATE = {
+    EP1_Done = false,
+    EP2_Done = false,
+    EP3_Done = false,
+    EP4_Done = false,
+    EP5_Done = false,
+    EP6_Done = false,
+    EP7_Done = false,
+    EP8_Done = false,
+    IsTeleporting = false
+}
+
+local function DLog(category, message)
+    if CONFIG.DEBUG_MODE then
+        print(string.format("[%s] %s", tostring(category), tostring(message)))
+    end
+end
+
+-- =====================================================================
+-- 🛡️ 3. BUG FIXER & ANTI-LAG
+-- =====================================================================
+task.spawn(function()
+    pcall(function()
+        local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents", 5)
+        if remoteEvents then
+            local effectEvent = remoteEvents:WaitForChild("OnCharacterEffectApplied", 5)
+            if effectEvent then
+                if effectEvent:IsA("RemoteEvent") then
+                    effectEvent.OnClientEvent:Connect(function() 
+                        -- Block visual effect lag
+                    end)
+                end
+            end
+        end
+    end)
+end)
+
+-- =====================================================================
+-- 🛠️ 4. STRICT REMOTES PATHS
+-- =====================================================================
+local RemoteFuncs = ReplicatedStorage:WaitForChild("RemoteFunctions")
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+
+local BuyRemote = RemoteFuncs:WaitForChild("BuyUnitBox")
+local EquipRemote = RemoteFuncs:WaitForChild("SetUnitEquipped")
+local BanRemote = RemoteEvents:WaitForChild("BanFromUnitBox")
+local CollectRemote = RemoteEvents:WaitForChild("CollectCollectable")
+
+-- =====================================================================
+-- 🎒 5. SMART UNIT SELECTOR
+-- =====================================================================
+local InventoryTableCache = nil
+
+local function UpdateInventoryCache()
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            pcall(function()
+                for uid, data in pairs(obj) do
+                    if type(uid) == "string" then
+                        if string.find(uid, "unique_") then
+                            if data.ItemData then
+                                if data.ItemData.ID then
+                                    InventoryTableCache = obj
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            if InventoryTableCache then 
+                break 
+            end
+        end
+    end
+end
+
+local function GetUIDByName(targetName)
+    if not InventoryTableCache then 
+        UpdateInventoryCache() 
+    end
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_") then
+                    if data.ItemData then
+                        if data.ItemData.ID == targetName then
+                            return uid
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function GetValidUnitBaseID()
+    if not InventoryTableCache then 
+        UpdateInventoryCache() 
+    end
+    
+    local fallbackUnit = nil
+    if InventoryTableCache then
+        -- 1. Must use Eggapult if available
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_") then
+                    if data.ItemData then
+                        if data.ItemData.ID == "unit_egg_catapult" then
+                            return "unit_egg_catapult"
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- 2. Use equipped, but NEVER Rafflesia or Lawnmower
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_") then
+                    if data.ItemData then
+                        if data.ItemData.ID then
+                            local id = data.ItemData.ID
+                            if id ~= "unit_rafflesia" then
+                                if id ~= "unit_lawnmower" then
+                                    if string.find(id, "unit_") then
+                                        if data.Equipped == true or data.EquippedSlot then
+                                            return id
+                                        end
+                                        if not fallbackUnit then 
+                                            fallbackUnit = id 
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- 3. Last Resort
+        if InventoryTableCache["unique_1"] then
+            if InventoryTableCache["unique_1"].ItemData then
+                local id = InventoryTableCache["unique_1"].ItemData.ID
+                if id ~= "unit_rafflesia" then
+                    if id ~= "unit_lawnmower" then 
+                        return id 
+                    end
+                end
+            end
+        end
+    end
+    
+    if fallbackUnit then
+        return fallbackUnit
+    else
+        return "unit_egg_catapult"
+    end
+end
+
+local function GetCurrentSeeds()
+    local success, seeds = pcall(function()
+        local playerGui = LocalPlayer.PlayerGui
+        local gameGui = playerGui:WaitForChild("GameGui")
+        local screen = gameGui:WaitForChild("Screen")
+        local bottom = screen:WaitForChild("Bottom")
+        local currencyDisplay = bottom:WaitForChild("CurrencyDisplay")
+        local seedsDisplay = currencyDisplay:WaitForChild("SeedsDisplay")
+        local title = seedsDisplay:WaitForChild("Title")
+        
+        local cleanText = string.gsub(title.Text, ",", "")
+        return tonumber(cleanText)
+    end)
+    
+    if success then
+        return seeds
+    else
+        return 999999999
+    end
+end
+
+local function IsInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if map then
+        if map:FindFirstChild("Garden") ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+-- =====================================================================
+-- 🖱️ 6. UI MONITOR & QUEST PROGRESS TRACKER
+-- =====================================================================
+local GameGui = LocalPlayer.PlayerGui:WaitForChild("GameGui")
+local MainCollectUI = GameGui:WaitForChild("Screen"):WaitForChild("Middle"):WaitForChild("Collectables")
+
+local function RefreshAndCheckUI()
+    if STATE.IsTeleporting then 
+        return 
+    end 
+
+    pcall(function()
+        local leftPanel = GameGui.Screen:WaitForChild("Left")
+        local sidebar = leftPanel:WaitForChild("Sidebar")
+        local items = sidebar:WaitForChild("Items")
+        local collectables = items:WaitForChild("Collectables")
+        local itemsInner = collectables:WaitForChild("Items")
+        local SidebarBtn = itemsInner:WaitForChild("Button")
+        
+        if SidebarBtn then
+            local connections = getconnections(SidebarBtn.MouseButton1Click)
+            for i = 1, #connections do
+                connections[i]:Fire() 
+            end
+        end
+        
+        local RightPanel = MainCollectUI:WaitForChild("Right", 3)
+        if RightPanel then
+            local EasterTab = RightPanel:WaitForChild("easter26", 3)
+            if EasterTab then
+                local consTab = getconnections(EasterTab.MouseButton1Click)
+                for i = 1, #consTab do
+                    consTab[i]:Fire() 
+                end
+            end
+        end
+
+        task.wait(1.5) -- Wait for table data to load
+
+        local descendants = GameGui:GetDescendants()
+        for i = 1, #descendants do
+            local v = descendants[i]
+            if v:IsA("TextLabel") then
+                local textLower = string.lower(v.Text)
+                if string.find(textLower, "owned") or string.find(textLower, "limit") or string.find(textLower, "left") then
+                    
+                    local currentType = ""
+                    local parentGroup = v.Parent
+                    if parentGroup then
+                        local grandParent = parentGroup.Parent
+                        if grandParent then
+                            local gpDescendants = grandParent:GetDescendants()
+                            for j = 1, #gpDescendants do
+                                local child = gpDescendants[j]
+                                if child:IsA("TextLabel") then
+                                    if string.find(child.Text, CONFIG.EP1_Name) then 
+                                        currentType = "EP1" 
+                                    elseif string.find(child.Text, CONFIG.EP2_Name) then 
+                                        currentType = "EP2" 
+                                    elseif string.find(child.Text, CONFIG.EP3_Name) then 
+                                        currentType = "EP3" 
+                                    elseif string.find(child.Text, CONFIG.EP4_Name) then 
+                                        currentType = "EP4" 
+                                    elseif string.find(child.Text, CONFIG.EP5_Name) then 
+                                        currentType = "EP5" 
+                                    elseif string.find(child.Text, CONFIG.EP6_Name) then 
+                                        currentType = "EP6" 
+                                    elseif string.find(child.Text, CONFIG.EP7_Name) or string.find(child.Text, "Island") then 
+                                        currentType = "EP7" 
+                                    elseif string.find(child.Text, CONFIG.EP8_Name) or string.find(child.Text, "Toxic") then 
+                                        currentType = "EP8" 
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    
+                    if currentType ~= "" then
+                        local availText = string.lower(v.Text)
+                        
+                        local avail = string.match(availText, "(%d+)%s+available")
+                        if not avail then
+                            avail = string.match(availText, "left:%s*(%d+)")
+                        end
+                        
+                        local limit = string.match(availText, "limit:%s*(%d+)")
+                        
+                        local owned = string.match(availText, "(%d+)%s+owned")
+                        if not owned then
+                            owned = string.match(availText, "owned:%s*(%d+)")
+                        end
+                        
+                        local isComplete = false
+                        
+                        if avail then
+                            if tonumber(avail) <= 0 then 
+                                isComplete = true 
+                            end
+                        elseif owned and limit then
+                            if tonumber(owned) >= tonumber(limit) then 
+                                isComplete = true 
+                            end
+                        end
+
+                        if isComplete then
+                            if not STATE[currentType.."_Done"] then
+                                STATE[currentType.."_Done"] = true
+                                DLog("SCANNER", "✅ [COMPLETED]: " .. currentType .. " has reached its limit!")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- First UI Scan
+DLog("SYSTEM", "Running Pre-Scan on Quest UI...")
+RefreshAndCheckUI()
+DLog("SYSTEM", "Pre-Scan Complete! Starting Auto-Farm...")
+
+-- =====================================================================
+-- ⚙️ 7. THREAD 1: HORST SPACE (Performance Optimizer)
+-- =====================================================================
+task.spawn(function()
+    DLog("HORST", "Horst Space (Performance Optimizer) running in background.")
+    
+    getgenv().HorstConfig = { 
+        ["EnableLog"] = true, 
+        ["Whitescreen"] = false, 
+        ["EnableAddFriends"] = false, 
+        ["LockFps"] = { 
+            ["EnableLockFps"] = false, 
+            ["LockFpsAmount"] = 30 
+        } 
+    }
+    
+    while true do
+        pcall(function()
+            if not getgenv().HorstRunning then
+                local url = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+                loadstring(game:HttpGet(url))()
+                getgenv().HorstRunning = true
+            end
+        end)
+        task.wait(30)
+    end
+end)
+
+-- =====================================================================
+-- 🟢 8. THREAD 2: ANTI-AFK (SIMPLE VIM MODE)
+-- =====================================================================
+task.spawn(function()
+    DLog("AFK", "Anti-AFK (VIM Mode) initialized. Preventing idle kick.")
+    
+    pcall(function()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+        local sg = Instance.new("ScreenGui")
+        sg.Name = "SimpleVIM_UI"
+        sg.Parent = playerGui
+
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 10, 0, 10)
+        dot.Position = UDim2.new(0, 30, 1, -30)
+        dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 999
+        dot.Parent = sg
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 2
+        stroke.Color = Color3.fromRGB(0, 0, 0)
+        stroke.Parent = dot
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = dot
+    end)
+
+    while true do
+        local waitTime = math.random(30, 80)
+        task.wait(waitTime)
+
+        pcall(function()
+            VirtualUser:CaptureController()
+            local rx = math.random(1, 50)
+            local ry = math.random(1, 50)
+            VirtualUser:ClickButton2(Vector2.new(rx, ry))
+        end)
+    end
+end)
+
+-- =====================================================================
+-- 🥚 9. THREAD 3: SILENT FAST COLLECTOR
+-- =====================================================================
+task.spawn(function()
+    -- Only prints ONCE to avoid log spam
+    DLog("COLLECTOR", "Attribute Sniper running silently in the background...")
+
+    local function TryCollect(obj)
+        local id = obj:GetAttribute("ID")
+        if id then
+            if type(id) == "number" then
+                pcall(function() 
+                    CollectRemote:FireServer(id) 
+                end)
+                return true
+            end
+        end
+        return false
+    end
+
+    Workspace.DescendantAdded:Connect(function(obj)
+        if TryCollect(obj) then 
+            return 
+        end
+        
+        local conn
+        conn = obj:GetAttributeChangedSignal("ID"):Connect(function()
+            TryCollect(obj)
+            if conn then 
+                conn:Disconnect() 
+            end
+        end)
+        
+        task.delay(2, function()
+            if conn then 
+                conn:Disconnect() 
+            end
+        end)
+    end)
+
+    while true do
+        local descendants = Workspace:GetDescendants()
+        for i = 1, #descendants do
+            local v = descendants[i]
+            local id = v:GetAttribute("ID")
+            if id then 
+                pcall(function() 
+                    CollectRemote:FireServer(id) 
+                end) 
+            end
+        end
+        task.wait(3) 
+    end
+end)
+
+-- =====================================================================
+-- 🎯 10. THREAD 4: LOBBY TASKS (EP1 - EP4)
+-- =====================================================================
+task.spawn(function()
+    local isInit = false
+    while true do
+        if not IsInLobby() then 
+            task.wait(2) 
+            continue 
+        end
+        
+        -- EP1: Equip Catapult
+        if not STATE.EP1_Done then
+            DLog("LOBBY", "▶️ [WORKING ON]: EP1 (Equipping Catapult)")
+            local catapultUID = GetUIDByName(CONFIG.TargetUnit)
+            
+            if not catapultUID then
+                if not isInit then
+                    DLog("LOBBY", "Banning unwanted units for EP1...")
+                    pcall(function() BanRemote:FireServer("ub_easter", CONFIG.TargetUnit, false) end)
+                    task.wait(0.3)
+                    
+                    local banList = {"unit_lily", "unit_icecream", "unit_egg_beam", "unit_easter_flower", "unit_bunny", "unit_bunny_flower"}
+                    for _, name in ipairs(banList) do 
+                        pcall(function() BanRemote:FireServer("ub_easter", name, true) end)
+                        task.wait(0.3) 
+                    end
+                    isInit = true
+                end
+                
+                pcall(function()
+                    BuyRemote:InvokeServer("ub_easter", 1)
+                end)
+            else
+                pcall(function()
+                    EquipRemote:InvokeServer(catapultUID, true)
+                end)
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack then
+                    local tool = backpack:FindFirstChild(CONFIG.ToolName)
+                    if tool then 
+                        local char = LocalPlayer.Character
+                        if char then
+                            local hum = char:FindFirstChild("Humanoid")
+                            if hum then
+                                pcall(function() hum:EquipTool(tool) end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- EP2: Obby
+        if not STATE.EP2_Done then
+            DLog("LOBBY", "▶️ [WORKING ON]: EP2 (Obby Sniper)")
+            local map = Workspace:FindFirstChild("Map")
+            if map then
+                local obby = map:FindFirstChild("ARGObby")
+                if obby then
+                    local descendants = obby:GetDescendants()
+                    for i = 1, #descendants do
+                        local v = descendants[i]
+                        if v:IsA("ProximityPrompt") then
+                            if v.Name == "InteractionPrompt" then
+                                local parentPart = v.Parent
+                                if parentPart then
+                                    local char = LocalPlayer.Character
+                                    if char then
+                                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                                        if hrp then
+                                            hrp.CFrame = CFrame.lookAt(CONFIG.ObbyPlatform, CONFIG.ObbyDoor)
+                                            task.wait(0.4)
+                                            
+                                            local children = parentPart:GetChildren()
+                                            for j = 1, #children do
+                                                local obj = children[j]
+                                                if obj:IsA("RemoteEvent") then 
+                                                    pcall(function()
+                                                        obj:FireServer() 
+                                                    end)
+                                                end 
+                                            end
+                                            
+                                            task.wait(CONFIG.EP2_WaitTime)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- EP3 & EP4 (Summoning)
+        local function RunSummon(boxId, questKey, banList)
+            if not STATE[questKey] then
+                DLog("LOBBY", "▶️ [WORKING ON]: " .. questKey .. " (Summoning " .. boxId .. ")")
+                
+                -- Ban unwanted units
+                for _, unitName in ipairs(banList) do
+                    pcall(function() 
+                        BanRemote:FireServer(boxId, unitName, true) 
+                    end)
+                    task.wait(0.1)
+                end
+
+                local currentSeeds = GetCurrentSeeds()
+                if currentSeeds > CONFIG.Limit_Seeds then
+                    pcall(function()
+                        BuyRemote:InvokeServer(boxId, CONFIG.Summon_Amount)
+                    end)
+                end
+            end
+        end
+        
+        RunSummon("ub_bee", "EP3_Done", {"unit_banana", "unit_worker", "unit_fruit_lobber", "unit_venus_floortrap", "unit_aloe_vera", "unit_pomegranate"})
+        RunSummon("ub_mushroom", "EP4_Done", {"unit_grenade_lobber", "unit_range_booster", "unit_scent_flower", "unit_drill_head", "unit_pine", "unit_pea_lobber"})
+
+        task.wait(2)
+    end
+end)
+
+-- =====================================================================
+-- ⚔️ 11. THREAD 5: MATCH LOGIC (EP5, EP6, EP7, EP8)
+-- =====================================================================
+local function StartAutoSkip(isEndTable)
+    task.spawn(function()
+        while not isEndTable.value do
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local gui = playerGui:FindFirstChild("GameGuiNoInset")
+                if gui then
+                    local screen = gui:FindFirstChild("Screen")
+                    if screen then
+                        local top = screen:FindFirstChild("Top")
+                        if top then
+                            local waveControls = top:FindFirstChild("WaveControls")
+                            if waveControls then
+                                local btn = waveControls:FindFirstChild("AutoSkip")
+                                if btn then
+                                    local title = btn:FindFirstChild("Title")
+                                    if title then
+                                        if title.Text == "Auto Skip: Off" then
+                                            local connections = getconnections(btn.MouseButton1Click)
+                                            for i = 1, #connections do
+                                                local c = connections[i]
+                                                c:Fire() 
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        local currentQuest = nil
+        
+        -- Sequence Check
+        if STATE.EP1_Done then
+            if STATE.EP2_Done then
+                if STATE.EP3_Done then
+                    if STATE.EP4_Done then
+                        if not STATE.EP5_Done then 
+                            currentQuest = "EP5"
+                        elseif not STATE.EP6_Done then 
+                            currentQuest = "EP6"
+                        elseif not STATE.EP7_Done then 
+                            currentQuest = "EP7"
+                        elseif not STATE.EP8_Done then 
+                            currentQuest = "EP8"
+                        else
+                            if not IsInLobby() then
+                                DLog("MATCH", "🎉 All maps completed! Teleporting back to Lobby...")
+                                pcall(function()
+                                    local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
+                                    if returnToLobby then
+                                        returnToLobby:InvokeServer()
+                                    end
+                                    local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
+                                    if leaveGame then
+                                        leaveGame:InvokeServer()
+                                    end
+                                end)
+                                task.wait(1.5)
+                                pcall(function() 
+                                    local placeId = game.PlaceId
+                                    TeleportService:Teleport(placeId, LocalPlayer) 
+                                end)
+                                task.wait(9e9) 
+                            end
+                            break 
+                        end
+                    end
+                end
+            end
+        end
+
+        if currentQuest then
+            if IsInLobby() then
+                STATE.IsTeleporting = true 
+                DLog("MATCH", "Preparing to enter elevator for " .. currentQuest)
+                
+                pcall(function()
+                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                    if playerGui then
+                        local gameGui = playerGui:FindFirstChild("GameGui")
+                        if gameGui then
+                            local screen = gameGui:FindFirstChild("Screen")
+                            if screen then
+                                local middle = screen:FindFirstChild("Middle")
+                                if middle then
+                                    local collectables = middle:FindFirstChild("Collectables")
+                                    if collectables then
+                                        local top = collectables:FindFirstChild("Top")
+                                        if top then
+                                            local closeBtn = top:FindFirstChild("Close")
+                                            if closeBtn then 
+                                                local connections = getconnections(closeBtn.MouseButton1Click)
+                                                for i = 1, #connections do
+                                                    local c = connections[i]
+                                                    c:Fire() 
+                                                end 
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+                
+                local char = LocalPlayer.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local pads = {85.05, 97.05, 109.05, 121.05}
+                        local pIndex = math.random(1, #pads)
+                        local pID = pIndex + 4
+                        local mapId = CONFIG[currentQuest.."_Map"]
+
+                        hrp.CFrame = CFrame.new(pads[pIndex], 71.73, 788.8)
+                        task.wait(2)
+                        
+                        pcall(function() 
+                            local remote = RemoteFuncs:WaitForChild("LobbySetMap_"..tostring(pID))
+                            remote:InvokeServer(mapId) 
+                        end)
+                        task.wait(1)
+                        pcall(function() 
+                            local remote = RemoteFuncs:WaitForChild("LobbySetMaxPlayers_"..tostring(pID))
+                            remote:InvokeServer(1) 
+                        end)
+                        
+                        task.wait(12)
+                        STATE.IsTeleporting = false
+                    end
+                end
+            else
+                STATE.IsTeleporting = false 
+                
+                -- Quick Check before starting
+                RefreshAndCheckUI()
+                if STATE[currentQuest.."_Done"] then
+                    DLog("MATCH", "🛑 " .. currentQuest .. " is already done! Hopping out immediately...")
+                    pcall(function()
+                        local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
+                        if returnToLobby then returnToLobby:InvokeServer() end
+                        local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
+                        if leaveGame then leaveGame:InvokeServer() end
+                    end)
+                    task.wait(1.5)
+                    pcall(function() 
+                        local placeId = game.PlaceId
+                        TeleportService:Teleport(placeId, LocalPlayer) 
+                    end)
+                    task.wait(9e9)
+                end
+                
+                DLog("MATCH", "▶️ [WORKING ON]: " .. currentQuest .. " (Hyper Spam Mode)")
+                
+                local isEnd = {value = false}
+                
+                pcall(function() 
+                    local voteRemote = RemoteFuncs:WaitForChild("PlaceDifficultyVote")
+                    voteRemote:InvokeServer("dif_easy") 
+                end)
+                task.wait(3)
+                
+                StartAutoSkip(isEnd)
+                
+                local dynamicUnitID = GetValidUnitBaseID()
+                local basePos = CONFIG[currentQuest.."_Pos"]
+                
+                local conn = RemoteEvents.ShowGameEnd.OnClientEvent:Connect(function() 
+                    isEnd.value = true 
+                end)
+                
+                task.spawn(function()
+                    while not isEnd.value do
+                        local map = Workspace:FindFirstChild("Map")
+                        if map then
+                            local baseHp = map:FindFirstChild("BaseHP")
+                            if baseHp then
+                                if baseHp.Value <= 0 then
+                                    isEnd.value = true
+                                end
+                            end
+                        end
+                        task.wait(2)
+                    end
+                end)
+                
+                -- 🚀 SPAM LOOP WITH KILL-SWITCH
+                while not isEnd.value do
+                    RefreshAndCheckUI()
+                    if STATE[currentQuest.."_Done"] then
+                        DLog("MATCH", "🚩 " .. currentQuest .. " Limit Reached! Breaking Spam Loop...")
+                        break
+                    end
+                    
+                    local rX = (math.random() * 3) - 1.5
+                    local rZ = (math.random() * 3) - 1.5
+                    local finalPos = Vector3.new(
+                        basePos.X + rX, 
+                        basePos.Y, 
+                        basePos.Z + rZ
+                    )
+                    
+                    local placeData = {
+                        ["CF"] = CFrame.new(finalPos) * CFrame.Angles(0, math.rad(180), 0),
+                        ["Rotation"] = 180, 
+                        ["Valid"] = true, 
+                        ["Position"] = finalPos
+                    }
+                    
+                    task.spawn(function()
+                        pcall(function()
+                            local placeRemote = RemoteFuncs:WaitForChild("PlaceUnit")
+                            placeRemote:InvokeServer(dynamicUnitID, placeData)
+                        end)
+                    end)
+                    
+                    task.spawn(function()
+                        pcall(function()
+                            local map = Workspace:FindFirstChild("Map")
+                            if map then
+                                local entities = map:FindFirstChild("Entities")
+                                if entities then
+                                    local children = entities:GetChildren()
+                                    for i = 1, #children do
+                                        local ent = children[i]
+                                        local id = ent:GetAttribute("ID")
+                                        if id then
+                                            local entName = string.lower(ent.Name)
+                                            if string.find(entName, "unit_") then
+                                                pcall(function() 
+                                                    local upgradeRemote = RemoteFuncs:WaitForChild("UpgradeUnit")
+                                                    upgradeRemote:InvokeServer(id) 
+                                                end)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                    end)
+                    
+                    task.wait(0.5) 
+                end
+                
+                if conn then 
+                    conn:Disconnect() 
+                end
+                
+                task.wait(2)
+                
+                if STATE[currentQuest.."_Done"] then
+                    DLog("MATCH", "📦 " .. currentQuest .. " Complete! Teleporting back to Lobby...")
+                    pcall(function()
+                        local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
+                        if returnToLobby then returnToLobby:InvokeServer() end
+                        local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
+                        if leaveGame then leaveGame:InvokeServer() end
+                    end)
+                    task.wait(2)
+                    pcall(function() 
+                        local placeId = game.PlaceId
+                        TeleportService:Teleport(placeId, LocalPlayer) 
+                    end)
+                    task.wait(9e9)
+                else
+                    DLog("MATCH", "🔄 Map finished but quest not complete. Restarting Game...")
+                    pcall(function() 
+                        local restartRemote = RemoteFuncs:WaitForChild("RestartGame")
+                        restartRemote:InvokeServer() 
+                    end)
+                    task.wait(10)
+                end
+            end
+        end
+        task.wait(2)
+    end
+end)
+
+-- =====================================================================
+-- 📊 12. MAIN THREAD: MASTER PROGRESS MONITOR
+-- =====================================================================
+task.spawn(function()
+    while true do
+        RefreshAndCheckUI()
+        
+        local allDone = true
+        
+        if not STATE.EP1_Done then allDone = false end
+        if not STATE.EP2_Done then allDone = false end
+        if not STATE.EP3_Done then allDone = false end
+        if not STATE.EP4_Done then allDone = false end
+        if not STATE.EP5_Done then allDone = false end
+        if not STATE.EP6_Done then allDone = false end
+        if not STATE.EP7_Done then allDone = false end
+        if not STATE.EP8_Done then allDone = false end
+        
+        if allDone then
+            DLog("SYSTEM", "🏆 All Easter Quests (EP1-EP8) Completed Successfully! Bot Stopped.")
+            break
+        end
+        
+        task.wait(CONFIG.UI_CheckRate)
+    end
+end)
