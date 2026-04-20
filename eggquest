@@ -33,7 +33,7 @@ local CONFIG = {
     
     -- 🛠️ TEST MODE CONFIGURATION (ล็อคเป้าเทส EP9 ด่านเดียว)
     TEST_MODE = {
-        ENABLED = true,     
+        ENABLED = false,     
         TARGET_EP = 9       
     },
     
