@@ -1,5 +1,5 @@
 -- =====================================================================
--- 🥚 SCRIPT: EASTER BOT V87 [THE GOLDEN PRESET MASTER - EP1 TO EP12]
+-- 🥚 SCRIPT: EASTER BOT V88 [THE GOLDEN PRESET MASTER - EP1 TO EP13]
 -- =====================================================================
 
 -- 🛑 1. ANTI-DUPLICATION (Prevent double execution)
@@ -31,10 +31,10 @@ local CONFIG = {
     DEBUG_MODE = true,           
     UI_CheckRate = 3,            
     
-    -- 🛠️ TEST MODE CONFIGURATION (ล็อคเป้าเทส EP12 ด่านเดียว)
+    -- 🛠️ TEST MODE CONFIGURATION (ล็อคเป้าเทส EP13 ด่านเดียว)
     TEST_MODE = {
-        ENABLED = true,     
-        TARGET_EP = 12       
+        ENABLED = false,     
+        TARGET_EP = 13       
     },
     
     -- EP1
@@ -106,7 +106,12 @@ local CONFIG = {
         CFrame.new(-2.5402822494506836, -22, 103.43515014648438, -1, 0, -8.742277657347586e-08, 0, 1, 0, 8.742277657347586e-08, 0, -1),
         CFrame.new(-6.702479839324951, -22, 110.93333435058594, -1, 0, -8.742277657347586e-08, 0, 1, 0, 8.742277657347586e-08, 0, -1),
         CFrame.new(2.550929546356201, -22, 111.28483581542969, -1, 0, -8.742277657347586e-08, 0, 1, 0, 8.742277657347586e-08, 0, -1)
-    }
+    },
+    
+    -- 🌌 EP13 (Starry Egg of Cosmic Wonder)
+    EP13_Map = "map_space",
+    EP13_Pos = Vector3.new(-33.78966522216797, -85.18521881103516, 32.94023895263672),
+    EP13_Name = "Starry Egg"
 }
 
 -- QUEST STATES
@@ -114,6 +119,7 @@ local STATE = {
     EP1_Done = false, EP2_Done = false, EP3_Done = false, EP4_Done = false,
     EP5_Done = false, EP6_Done = false, EP7_Done = false, EP8_Done = false,
     EP9_Done = false, EP10_Done = false, EP11_Done = false, EP12_Done = false,
+    EP13_Done = false,
     IsTeleporting = false,
     EGGS_LEFT = {} 
 }
@@ -405,6 +411,7 @@ local function RefreshAndCheckUI()
                                     elseif string.find(child.Text, CONFIG.EP10_Name, 1, true) then currentType = "EP10" 
                                     elseif string.find(child.Text, CONFIG.EP11_Name, 1, true) or string.find(child.Text, "Backgarden", 1, true) then currentType = "EP11" 
                                     elseif string.find(child.Text, CONFIG.EP12_Name, 1, true) or string.find(child.Text, "Cherry", 1, true) then currentType = "EP12"
+                                    elseif string.find(child.Text, CONFIG.EP13_Name, 1, true) or string.find(child.Text, "Starry", 1, true) then currentType = "EP13"
                                     end
                                 end
                             end
@@ -719,7 +726,7 @@ task.spawn(function()
 end)
 
 -- =====================================================================
--- ⚔️ 11. THREAD 5: MATCH LOGIC (EP5 TO EP12)
+-- ⚔️ 11. THREAD 5: MATCH LOGIC (EP5 TO EP13)
 -- =====================================================================
 local function StartAutoSkip(isEndTable)
     task.spawn(function()
@@ -768,7 +775,7 @@ task.spawn(function()
         -- 🛠️ Sequence Logic
         if CONFIG.TEST_MODE.ENABLED then
             local tEP = CONFIG.TEST_MODE.TARGET_EP
-            if tEP >= 5 and tEP <= 12 then
+            if tEP >= 5 and tEP <= 13 then
                 if not STATE["EP"..tEP.."_Done"] then
                     currentQuest = "EP" .. tostring(tEP)
                 else
@@ -796,6 +803,7 @@ task.spawn(function()
                 elseif not STATE.EP10_Done then currentQuest = "EP10"
                 elseif not STATE.EP11_Done then currentQuest = "EP11"
                 elseif not STATE.EP12_Done then currentQuest = "EP12"
+                elseif not STATE.EP13_Done then currentQuest = "EP13"
                 else
                     if not IsInLobby() then
                         DLog("MATCH", "🎉 All maps completed! Teleporting back to Lobby...")
@@ -1137,7 +1145,7 @@ task.spawn(function()
                         end)
                         
                     else
-                        -- STANDARD EP5-EP8 & EP10 PLACEMENT LOGIC
+                        -- STANDARD EP5-EP8, EP10 & EP13 PLACEMENT LOGIC
                         local basePos = CONFIG[currentQuest.."_Pos"]
                         local fPos = basePos + Vector3.new((math.random() * 3) - 1.5, 0, (math.random() * 3) - 1.5)
                         task.spawn(function()
@@ -1159,7 +1167,10 @@ task.spawn(function()
                     task.wait(0.5) 
                 end
                 
-                if conn then conn:Disconnect() end
+                if conn then 
+                    conn:Disconnect() 
+                end
+                
                 task.wait(2)
                 
                 if STATE[currentQuest.."_Done"] then
@@ -1196,22 +1207,26 @@ end)
 task.spawn(function()
     while true do
         RefreshAndCheckUI()
+        
         local allDone = true
+        
         if CONFIG.TEST_MODE.ENABLED then
-            local targetQuest = "EP" .. tostring(CONFIG.TEST_MODE.TARGET_EP)
+            local tEP = CONFIG.TEST_MODE.TARGET_EP
+            local targetQuest = "EP" .. tostring(tEP)
             if STATE[targetQuest.."_Done"] then
                 DLog("SYSTEM", "🏆 Test Mode: " .. targetQuest .. " is Completed Successfully! Bot Stopped.")
                 break
             end
         else
-            for i=1, 12 do
+            for i=1, 13 do
                 if not STATE["EP"..i.."_Done"] then allDone = false break end
             end
             if allDone then
-                DLog("SYSTEM", "🏆 All Easter Quests (EP1-EP12) Completed Successfully! Bot Stopped.")
+                DLog("SYSTEM", "🏆 All Easter Quests (EP1-EP13) Completed Successfully! Bot Stopped.")
                 break
             end
         end
+        
         task.wait(CONFIG.UI_CheckRate)
     end
 end)
