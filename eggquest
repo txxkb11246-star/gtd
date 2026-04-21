@@ -1,5 +1,5 @@
 -- =====================================================================
--- 🥚 SCRIPT: EASTER BOT V88 [THE GOLDEN PRESET MASTER - EP1 TO EP13]
+-- 🥚 SCRIPT: EASTER BOT V91 [THE UNROLLED MASTER - EP1 TO EP13]
 -- =====================================================================
 
 -- 🛑 1. ANTI-DUPLICATION (Prevent double execution)
@@ -33,7 +33,7 @@ local CONFIG = {
     
     -- 🛠️ TEST MODE CONFIGURATION (ล็อคเป้าเทส EP13 ด่านเดียว)
     TEST_MODE = {
-        ENABLED = false,     
+        ENABLED = true,     
         TARGET_EP = 13       
     },
     
@@ -111,14 +111,23 @@ local CONFIG = {
     -- 🌌 EP13 (Starry Egg of Cosmic Wonder)
     EP13_Map = "map_space",
     EP13_Pos = Vector3.new(-33.78966522216797, -85.18521881103516, 32.94023895263672),
-    EP13_Name = "Starry Egg"
+    EP13_Name = "Starry"
 }
 
 -- QUEST STATES
 local STATE = {
-    EP1_Done = false, EP2_Done = false, EP3_Done = false, EP4_Done = false,
-    EP5_Done = false, EP6_Done = false, EP7_Done = false, EP8_Done = false,
-    EP9_Done = false, EP10_Done = false, EP11_Done = false, EP12_Done = false,
+    EP1_Done = false, 
+    EP2_Done = false, 
+    EP3_Done = false, 
+    EP4_Done = false,
+    EP5_Done = false, 
+    EP6_Done = false, 
+    EP7_Done = false, 
+    EP8_Done = false,
+    EP9_Done = false, 
+    EP10_Done = false, 
+    EP11_Done = false, 
+    EP12_Done = false,
     EP13_Done = false,
     IsTeleporting = false,
     EGGS_LEFT = {} 
@@ -218,6 +227,7 @@ local function GetValidUnitBaseID()
     
     local fallbackUnit = nil
     if InventoryTableCache then
+        -- 1. ลำดับแรก หา Catapult เสมอ
         for uid, data in pairs(InventoryTableCache) do
             if type(uid) == "string" then
                 if string.find(uid, "unique_", 1, true) then
@@ -230,6 +240,7 @@ local function GetValidUnitBaseID()
             end
         end
         
+        -- 2. ถ้าไม่มี ค่อยหาตัวที่ใส่อยู่หรือตัวแรกสุดที่ใส่ได้
         for uid, data in pairs(InventoryTableCache) do
             if type(uid) == "string" then
                 if string.find(uid, "unique_", 1, true) then
@@ -276,24 +287,34 @@ end
 -- 🌟 Initial Smart Unequip (ทำครั้งเดียวตอนเริ่มรันสคริปต์)
 task.spawn(function()
     DLog("SYSTEM", "🔄 Initializing Smart Unequip...")
-    if not InventoryTableCache then UpdateInventoryCache() end
+    if not InventoryTableCache then 
+        UpdateInventoryCache() 
+    end
     
     local targetUnitID = GetValidUnitBaseID()
     local unequipCount = 0
     
     if InventoryTableCache then
         for uid, data in pairs(InventoryTableCache) do
-            if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
-                if data.Equipped == true or data.EquippedSlot then
-                    if data.ItemData and data.ItemData.ID then
-                        local id = data.ItemData.ID
-                        -- ห้ามถอดเป้าหมายที่จะใช้ และห้ามถอดตัวกันฐาน
-                        if id ~= targetUnitID and id ~= "unit_rafflesia" and id ~= "unit_lawnmower" then
-                            pcall(function() 
-                                EquipRemote:InvokeServer(uid, false) 
-                            end)
-                            unequipCount = unequipCount + 1
-                            task.wait(0.1)
+            if type(uid) == "string" then
+                if string.find(uid, "unique_", 1, true) then
+                    if data.Equipped == true or data.EquippedSlot then
+                        if data.ItemData then
+                            if data.ItemData.ID then
+                                local id = data.ItemData.ID
+                                -- ห้ามถอดเป้าหมายที่จะใช้ และห้ามถอดตัวกันฐาน
+                                if id ~= targetUnitID then
+                                    if id ~= "unit_rafflesia" then
+                                        if id ~= "unit_lawnmower" then
+                                            pcall(function() 
+                                                EquipRemote:InvokeServer(uid, false) 
+                                            end)
+                                            unequipCount = unequipCount + 1
+                                            task.wait(0.1)
+                                        end
+                                    end
+                                end
+                            end
                         end
                     end
                 end
@@ -307,10 +328,11 @@ task.spawn(function()
     local uidToEquip = GetUIDByName(targetUnitID)
     if uidToEquip then
         DLog("SYSTEM", "✅ Equipping target unit: " .. targetUnitID)
-        pcall(function() EquipRemote:InvokeServer(uidToEquip, true) end)
+        pcall(function() 
+            EquipRemote:InvokeServer(uidToEquip, true) 
+        end)
     end
 end)
-
 
 local function GetCurrentSeeds()
     local success, seeds = pcall(function()
@@ -344,7 +366,7 @@ local function IsInLobby()
 end
 
 -- =====================================================================
--- 🖱️ 6. UI MONITOR & QUEST PROGRESS TRACKER (PART 1 TARGETED)
+-- 🖱️ 6. UI MONITOR & QUEST PROGRESS TRACKER
 -- =====================================================================
 local GameGui = LocalPlayer.PlayerGui:WaitForChild("GameGui")
 local MainCollectUI = GameGui:WaitForChild("Screen"):WaitForChild("Middle"):WaitForChild("Collectables")
@@ -365,18 +387,19 @@ local function RefreshAndCheckUI()
         if SidebarBtn then
             local connections = getconnections(SidebarBtn.MouseButton1Click)
             for i = 1, #connections do
-                connections[i]:Fire() 
+                local c = connections[i]
+                c:Fire() 
             end
         end
         
         local RightPanel = MainCollectUI:WaitForChild("Right", 3)
         if RightPanel then
-            -- 🎯 โฟกัสเฉพาะ Part 1 (easter26) เท่านั้น
             local EasterTab = RightPanel:WaitForChild("easter26", 3)
             if EasterTab then
                 local consTab = getconnections(EasterTab.MouseButton1Click)
                 for i = 1, #consTab do
-                    consTab[i]:Fire() 
+                    local c = consTab[i]
+                    c:Fire() 
                 end
             end
         end
@@ -399,19 +422,32 @@ local function RefreshAndCheckUI()
                             for j = 1, #gpDescendants do
                                 local child = gpDescendants[j]
                                 if child:IsA("TextLabel") then
-                                    if string.find(child.Text, CONFIG.EP1_Name, 1, true) then currentType = "EP1" 
-                                    elseif string.find(child.Text, CONFIG.EP2_Name, 1, true) then currentType = "EP2" 
-                                    elseif string.find(child.Text, CONFIG.EP3_Name, 1, true) then currentType = "EP3" 
-                                    elseif string.find(child.Text, CONFIG.EP4_Name, 1, true) then currentType = "EP4" 
-                                    elseif string.find(child.Text, CONFIG.EP5_Name, 1, true) then currentType = "EP5" 
-                                    elseif string.find(child.Text, CONFIG.EP6_Name, 1, true) then currentType = "EP6" 
-                                    elseif string.find(child.Text, CONFIG.EP7_Name, 1, true) or string.find(child.Text, "Island", 1, true) then currentType = "EP7" 
-                                    elseif string.find(child.Text, CONFIG.EP8_Name, 1, true) or string.find(child.Text, "Toxic", 1, true) then currentType = "EP8" 
-                                    elseif string.find(child.Text, CONFIG.EP9_Name, 1, true) or string.find(child.Text, "Maze", 1, true) then currentType = "EP9" 
-                                    elseif string.find(child.Text, CONFIG.EP10_Name, 1, true) then currentType = "EP10" 
-                                    elseif string.find(child.Text, CONFIG.EP11_Name, 1, true) or string.find(child.Text, "Backgarden", 1, true) then currentType = "EP11" 
-                                    elseif string.find(child.Text, CONFIG.EP12_Name, 1, true) or string.find(child.Text, "Cherry", 1, true) then currentType = "EP12"
-                                    elseif string.find(child.Text, CONFIG.EP13_Name, 1, true) or string.find(child.Text, "Starry", 1, true) then currentType = "EP13"
+                                    if string.find(child.Text, CONFIG.EP1_Name, 1, true) then 
+                                        currentType = "EP1" 
+                                    elseif string.find(child.Text, CONFIG.EP2_Name, 1, true) then 
+                                        currentType = "EP2" 
+                                    elseif string.find(child.Text, CONFIG.EP3_Name, 1, true) then 
+                                        currentType = "EP3" 
+                                    elseif string.find(child.Text, CONFIG.EP4_Name, 1, true) then 
+                                        currentType = "EP4" 
+                                    elseif string.find(child.Text, CONFIG.EP5_Name, 1, true) then 
+                                        currentType = "EP5" 
+                                    elseif string.find(child.Text, CONFIG.EP6_Name, 1, true) then 
+                                        currentType = "EP6" 
+                                    elseif string.find(child.Text, CONFIG.EP7_Name, 1, true) or string.find(child.Text, "Island", 1, true) then 
+                                        currentType = "EP7" 
+                                    elseif string.find(child.Text, CONFIG.EP8_Name, 1, true) or string.find(child.Text, "Toxic", 1, true) then 
+                                        currentType = "EP8" 
+                                    elseif string.find(child.Text, CONFIG.EP9_Name, 1, true) or string.find(child.Text, "Maze", 1, true) then 
+                                        currentType = "EP9" 
+                                    elseif string.find(child.Text, CONFIG.EP10_Name, 1, true) then 
+                                        currentType = "EP10" 
+                                    elseif string.find(child.Text, CONFIG.EP11_Name, 1, true) or string.find(child.Text, "Backgarden", 1, true) then 
+                                        currentType = "EP11" 
+                                    elseif string.find(child.Text, CONFIG.EP12_Name, 1, true) or string.find(child.Text, "Cherry", 1, true) then 
+                                        currentType = "EP12"
+                                    elseif string.find(child.Text, CONFIG.EP13_Name, 1, true) or string.find(child.Text, "Starry", 1, true) then 
+                                        currentType = "EP13"
                                     end
                                 end
                             end
@@ -614,7 +650,9 @@ task.spawn(function()
         if shouldRunLobby then
             -- EP1
             local runEP1 = not STATE.EP1_Done
-            if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= 1 then runEP1 = false end
+            if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= 1 then 
+                runEP1 = false 
+            end
             
             if runEP1 then
                 DLog("LOBBY", "▶️ [WORKING ON]: EP1 (Equipping Catapult)")
@@ -622,12 +660,17 @@ task.spawn(function()
                 
                 if not catapultUID then
                     if not isInit then
-                        pcall(function() BanRemote:FireServer("ub_easter", CONFIG.TargetUnit, false) end)
+                        pcall(function() 
+                            BanRemote:FireServer("ub_easter", CONFIG.TargetUnit, false) 
+                        end)
                         task.wait(0.3)
                         
                         local banList = {"unit_lily", "unit_icecream", "unit_egg_beam", "unit_easter_flower", "unit_bunny", "unit_bunny_flower"}
-                        for _, name in ipairs(banList) do 
-                            pcall(function() BanRemote:FireServer("ub_easter", name, true) end)
+                        for i = 1, #banList do 
+                            local name = banList[i]
+                            pcall(function() 
+                                BanRemote:FireServer("ub_easter", name, true) 
+                            end)
                             task.wait(0.3) 
                         end
                         isInit = true
@@ -637,7 +680,9 @@ task.spawn(function()
                         BuyRemote:InvokeServer("ub_easter", 1)
                     end)
                 else
-                    pcall(function() EquipRemote:InvokeServer(catapultUID, true) end)
+                    pcall(function() 
+                        EquipRemote:InvokeServer(catapultUID, true) 
+                    end)
                     local backpack = LocalPlayer:FindFirstChild("Backpack")
                     if backpack then
                         local tool = backpack:FindFirstChild(CONFIG.ToolName)
@@ -646,7 +691,9 @@ task.spawn(function()
                             if char then
                                 local hum = char:FindFirstChild("Humanoid")
                                 if hum then
-                                    pcall(function() hum:EquipTool(tool) end)
+                                    pcall(function() 
+                                        hum:EquipTool(tool) 
+                                    end)
                                 end
                             end
                         end
@@ -656,7 +703,9 @@ task.spawn(function()
 
             -- EP2
             local runEP2 = not STATE.EP2_Done
-            if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= 2 then runEP2 = false end
+            if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= 2 then 
+                runEP2 = false 
+            end
 
             if runEP2 then
                 DLog("LOBBY", "▶️ [WORKING ON]: EP2 (Obby Sniper)")
@@ -682,7 +731,9 @@ task.spawn(function()
                                                 for j = 1, #children do
                                                     local obj = children[j]
                                                     if obj:IsA("RemoteEvent") then 
-                                                        pcall(function() obj:FireServer() end)
+                                                        pcall(function() 
+                                                            obj:FireServer() 
+                                                        end)
                                                     end 
                                                 end
                                                 task.wait(CONFIG.EP2_WaitTime)
@@ -699,12 +750,17 @@ task.spawn(function()
             -- EP3 & EP4 (Summoning)
             local function RunSummon(boxId, questKey, banList, targetEpNum)
                 local canRun = not STATE[questKey]
-                if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= targetEpNum then canRun = false end
+                if CONFIG.TEST_MODE.ENABLED and CONFIG.TEST_MODE.TARGET_EP ~= targetEpNum then 
+                    canRun = false 
+                end
                 
                 if canRun then
                     DLog("LOBBY", "▶️ [WORKING ON]: " .. questKey .. " (Summoning " .. boxId .. ")")
-                    for _, unitName in ipairs(banList) do
-                        pcall(function() BanRemote:FireServer(boxId, unitName, true) end)
+                    for i = 1, #banList do
+                        local unitName = banList[i]
+                        pcall(function() 
+                            BanRemote:FireServer(boxId, unitName, true) 
+                        end)
                         task.wait(0.1)
                     end
 
@@ -783,38 +839,59 @@ task.spawn(function()
                         DLog("MATCH", "🎉 Test Target Complete! Teleporting back to Lobby...")
                         pcall(function()
                             local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
-                            if returnToLobby then returnToLobby:InvokeServer() end
+                            if returnToLobby then 
+                                returnToLobby:InvokeServer() 
+                            end
                             local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
-                            if leaveGame then leaveGame:InvokeServer() end
+                            if leaveGame then 
+                                leaveGame:InvokeServer() 
+                            end
                         end)
                         task.wait(1.5)
-                        pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+                        pcall(function() 
+                            TeleportService:Teleport(game.PlaceId, LocalPlayer) 
+                        end)
                         task.wait(9e9) 
                     end
                 end
             end
         else
             if STATE.EP1_Done and STATE.EP2_Done and STATE.EP3_Done and STATE.EP4_Done then
-                if not STATE.EP5_Done then currentQuest = "EP5"
-                elseif not STATE.EP6_Done then currentQuest = "EP6"
-                elseif not STATE.EP7_Done then currentQuest = "EP7"
-                elseif not STATE.EP8_Done then currentQuest = "EP8"
-                elseif not STATE.EP9_Done then currentQuest = "EP9"
-                elseif not STATE.EP10_Done then currentQuest = "EP10"
-                elseif not STATE.EP11_Done then currentQuest = "EP11"
-                elseif not STATE.EP12_Done then currentQuest = "EP12"
-                elseif not STATE.EP13_Done then currentQuest = "EP13"
+                if not STATE.EP5_Done then 
+                    currentQuest = "EP5"
+                elseif not STATE.EP6_Done then 
+                    currentQuest = "EP6"
+                elseif not STATE.EP7_Done then 
+                    currentQuest = "EP7"
+                elseif not STATE.EP8_Done then 
+                    currentQuest = "EP8"
+                elseif not STATE.EP9_Done then 
+                    currentQuest = "EP9"
+                elseif not STATE.EP10_Done then 
+                    currentQuest = "EP10"
+                elseif not STATE.EP11_Done then 
+                    currentQuest = "EP11"
+                elseif not STATE.EP12_Done then 
+                    currentQuest = "EP12"
+                elseif not STATE.EP13_Done then 
+                    currentQuest = "EP13"
                 else
                     if not IsInLobby() then
                         DLog("MATCH", "🎉 All maps completed! Teleporting back to Lobby...")
                         pcall(function()
                             local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
-                            if returnToLobby then returnToLobby:InvokeServer() end
+                            if returnToLobby then 
+                                returnToLobby:InvokeServer() 
+                            end
                             local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
-                            if leaveGame then leaveGame:InvokeServer() end
+                            if leaveGame then 
+                                leaveGame:InvokeServer() 
+                            end
                         end)
                         task.wait(1.5)
-                        pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+                        pcall(function() 
+                            TeleportService:Teleport(game.PlaceId, LocalPlayer) 
+                        end)
                         task.wait(9e9) 
                     end
                     break 
@@ -867,6 +944,7 @@ task.spawn(function()
                             DLog("MATCH", "EP9 Detected! Warping directly to Event Elevator 19 door...")
                             hrp.CFrame = CONFIG.EP9_Elevator_CF
                             task.wait(1)
+                            
                             hrp.CFrame = CONFIG.EP9_Elevator_CF
                             task.wait(1.5)
                             
@@ -905,6 +983,7 @@ task.spawn(function()
                                 remote:InvokeServer(mapId) 
                             end)
                             task.wait(1)
+                            
                             pcall(function() 
                                 local remote = RemoteFuncs:WaitForChild("LobbySetMaxPlayers_"..tostring(pID))
                                 remote:InvokeServer(1) 
@@ -925,9 +1004,13 @@ task.spawn(function()
                     DLog("MATCH", "🛑 " .. currentQuest .. " is already done! Hopping out immediately...")
                     pcall(function()
                         local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
-                        if returnToLobby then returnToLobby:InvokeServer() end
+                        if returnToLobby then 
+                            returnToLobby:InvokeServer() 
+                        end
                         local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
-                        if leaveGame then leaveGame:InvokeServer() end
+                        if leaveGame then 
+                            leaveGame:InvokeServer() 
+                        end
                     end)
                     task.wait(1.5)
                     pcall(function() 
@@ -966,8 +1049,10 @@ task.spawn(function()
                             local baseHp = map:FindFirstChild("BaseHP")
                             if baseHp then
                                 local hpVal = baseHp.Value
-                                if type(hpVal) == "number" and hpVal <= 0 then
-                                    isEnd.value = true
+                                if type(hpVal) == "number" then
+                                    if hpVal <= 0 then
+                                        isEnd.value = true
+                                    end
                                 end
                             end
                         end
@@ -995,7 +1080,7 @@ task.spawn(function()
                 -- 🧹 THE GOLDEN PRESET: CLEAR ALL LOGIC (ทำแค่ตอนเริ่มเกมครั้งเดียว ป้องกันบั๊ก)
                 if currentQuest ~= "EP9" then
                     DLog(currentQuest, "🧹 กวาดล้างตัวละครเริ่มต้นออกจากแมพ...")
-                    for _ = 1, 3 do 
+                    for loopCount = 1, 3 do 
                         pcall(function()
                             local map = Workspace:FindFirstChild("Map")
                             if map then
@@ -1005,11 +1090,15 @@ task.spawn(function()
                                     for i = 1, #children do
                                         local ent = children[i]
                                         local lowerName = string.lower(ent.Name)
-                                        -- ใช้ plain=true กันเหนียว
-                                        if string.find(lowerName, "unit_", 1, true) and not string.find(lowerName, dynamicUnitID, 1, true) then
-                                            local id = ent:GetAttribute("ID")
-                                            if id then
-                                                pcall(function() SellRemote:InvokeServer(id) end)
+                                        if string.find(lowerName, "unit_", 1, true) then
+                                            if not string.find(lowerName, string.lower(dynamicUnitID), 1, true) then
+                                                local id = ent:GetAttribute("ID")
+                                                if id then
+                                                    pcall(function() 
+                                                        local sellRemote = RemoteFuncs:WaitForChild("SellUnit")
+                                                        sellRemote:InvokeServer(id) 
+                                                    end)
+                                                end
                                             end
                                         end
                                     end
@@ -1079,7 +1168,11 @@ task.spawn(function()
                         if pepperCount == 0 then
                             local rX = (math.random() * 3) - 1.5
                             local rZ = (math.random() * 3) - 1.5
-                            local finalPos = Vector3.new(CONFIG.EP9_Pos_Pepper.X + rX, CONFIG.EP9_Pos_Pepper.Y, CONFIG.EP9_Pos_Pepper.Z + rZ)
+                            local finalPos = Vector3.new(
+                                CONFIG.EP9_Pos_Pepper.X + rX, 
+                                CONFIG.EP9_Pos_Pepper.Y, 
+                                CONFIG.EP9_Pos_Pepper.Z + rZ
+                            )
                             
                             task.spawn(function()
                                 pcall(function()
@@ -1097,7 +1190,11 @@ task.spawn(function()
                         if pumpkinCount == 0 then
                             local rX = (math.random() * 3) - 1.5
                             local rZ = (math.random() * 3) - 1.5
-                            local finalPos = Vector3.new(CONFIG.EP9_Pos_Pumpkin.X + rX, CONFIG.EP9_Pos_Pumpkin.Y, CONFIG.EP9_Pos_Pumpkin.Z + rZ)
+                            local finalPos = Vector3.new(
+                                CONFIG.EP9_Pos_Pumpkin.X + rX, 
+                                CONFIG.EP9_Pos_Pumpkin.Y, 
+                                CONFIG.EP9_Pos_Pumpkin.Z + rZ
+                            )
                             
                             task.spawn(function()
                                 pcall(function()
@@ -1114,55 +1211,103 @@ task.spawn(function()
                         
                     elseif currentQuest == "EP11" or currentQuest == "EP12" then
                         -- THE GOLDEN PRESET: FIXED CFrame PLACEMENTS (EP11 & EP12)
-                        local cfs = (currentQuest == "EP11") and CONFIG.EP11_Cframes or CONFIG.EP12_Cframes
-                        task.spawn(function()
-                            if cfs then
-                                for _, cf in ipairs(cfs) do
-                                    pcall(function()
-                                        RemoteFuncs.PlaceUnit:InvokeServer(dynamicUnitID, {
-                                            ["CF"] = cf,
-                                            ["Rotation"] = 180, 
-                                            ["Valid"] = true, 
-                                            ["Position"] = cf.Position
-                                        })
-                                    end)
-                                    task.wait(0.1)
+                        local cfs = nil
+                        if currentQuest == "EP11" then
+                            cfs = CONFIG.EP11_Cframes
+                        elseif currentQuest == "EP12" then
+                            cfs = CONFIG.EP12_Cframes
+                        end
+                        
+                        local unitCount = 0
+                        pcall(function()
+                            local map = Workspace:FindFirstChild("Map")
+                            if map then
+                                local entities = map:FindFirstChild("Entities")
+                                if entities then
+                                    local children = entities:GetChildren()
+                                    for i = 1, #children do
+                                        local ent = children[i]
+                                        local lowerName = string.lower(ent.Name)
+                                        if string.find(lowerName, string.lower(dynamicUnitID), 1, true) then
+                                            unitCount = unitCount + 1
+                                            local id = ent:GetAttribute("ID")
+                                            if id then
+                                                pcall(function()
+                                                    local upgradeRemote = RemoteFuncs:WaitForChild("UpgradeUnit")
+                                                    upgradeRemote:InvokeServer(id)
+                                                end)
+                                            end
+                                        end
+                                    end
                                 end
                             end
                         end)
-                        
-                        task.spawn(function()
-                            pcall(function()
-                                local ents = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Entities")
-                                if ents then
-                                    for _, ent in ipairs(ents:GetChildren()) do
-                                        if ent:GetAttribute("ID") and string.find(string.lower(ent.Name), "unit_", 1, true) then
-                                            pcall(function() RemoteFuncs.UpgradeUnit:InvokeServer(ent:GetAttribute("ID")) end)
-                                        end
-                                    end
-                                end
-                            end)
-                        end)
+
+                        if cfs then
+                            if unitCount < #cfs then
+                                local cfToPlace = cfs[unitCount + 1]
+                                task.spawn(function()
+                                    pcall(function()
+                                        local placeRemote = RemoteFuncs:WaitForChild("PlaceUnit")
+                                        placeRemote:InvokeServer(dynamicUnitID, {
+                                            ["CF"] = cfToPlace,
+                                            ["Rotation"] = 180, 
+                                            ["Valid"] = true, 
+                                            ["Position"] = cfToPlace.Position
+                                        })
+                                    end)
+                                end)
+                            end
+                        end
                         
                     else
                         -- STANDARD EP5-EP8, EP10 & EP13 PLACEMENT LOGIC
-                        local basePos = CONFIG[currentQuest.."_Pos"]
-                        local fPos = basePos + Vector3.new((math.random() * 3) - 1.5, 0, (math.random() * 3) - 1.5)
-                        task.spawn(function()
-                            pcall(function() RemoteFuncs.PlaceUnit:InvokeServer(dynamicUnitID, {["CF"] = CFrame.new(fPos) * CFrame.Angles(0, math.rad(180), 0), ["Rotation"] = 180, ["Valid"] = true, ["Position"] = fPos}) end)
-                        end)
-                        task.spawn(function()
-                            pcall(function()
-                                local ents = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Entities")
-                                if ents then
-                                    for _, ent in ipairs(ents:GetChildren()) do
-                                        if ent:GetAttribute("ID") and string.find(string.lower(ent.Name), "unit_", 1, true) then
-                                            pcall(function() RemoteFuncs.UpgradeUnit:InvokeServer(ent:GetAttribute("ID")) end)
+                        local unitCount = 0
+                        pcall(function()
+                            local map = Workspace:FindFirstChild("Map")
+                            if map then
+                                local entities = map:FindFirstChild("Entities")
+                                if entities then
+                                    local children = entities:GetChildren()
+                                    for i = 1, #children do
+                                        local ent = children[i]
+                                        local lowerName = string.lower(ent.Name)
+                                        if string.find(lowerName, string.lower(dynamicUnitID), 1, true) then
+                                            unitCount = unitCount + 1
+                                            local id = ent:GetAttribute("ID")
+                                            if id then
+                                                pcall(function()
+                                                    local upgradeRemote = RemoteFuncs:WaitForChild("UpgradeUnit")
+                                                    upgradeRemote:InvokeServer(id)
+                                                end)
+                                            end
                                         end
                                     end
                                 end
-                            end)
+                            end
                         end)
+
+                        if unitCount == 0 then
+                            local basePos = CONFIG[currentQuest.."_Pos"]
+                            local rX = (math.random() * 3) - 1.5
+                            local rZ = (math.random() * 3) - 1.5
+                            local finalPos = Vector3.new(
+                                basePos.X + rX, 
+                                basePos.Y, 
+                                basePos.Z + rZ
+                            )
+                            task.spawn(function()
+                                pcall(function() 
+                                    local placeRemote = RemoteFuncs:WaitForChild("PlaceUnit")
+                                    placeRemote:InvokeServer(dynamicUnitID, {
+                                        ["CF"] = CFrame.new(finalPos) * CFrame.Angles(0, math.rad(180), 0), 
+                                        ["Rotation"] = 180, 
+                                        ["Valid"] = true, 
+                                        ["Position"] = finalPos
+                                    }) 
+                                end)
+                            end)
+                        end
                     end
                     task.wait(0.5) 
                 end
@@ -1170,16 +1315,19 @@ task.spawn(function()
                 if conn then 
                     conn:Disconnect() 
                 end
-                
                 task.wait(2)
                 
                 if STATE[currentQuest.."_Done"] then
                     DLog("MATCH", "📦 " .. currentQuest .. " Complete! Teleporting back to Lobby...")
                     pcall(function()
                         local returnToLobby = RemoteFuncs:FindFirstChild("ReturnToLobby")
-                        if returnToLobby then returnToLobby:InvokeServer() end
+                        if returnToLobby then 
+                            returnToLobby:InvokeServer() 
+                        end
                         local leaveGame = RemoteFuncs:FindFirstChild("LeaveGame")
-                        if leaveGame then leaveGame:InvokeServer() end
+                        if leaveGame then 
+                            leaveGame:InvokeServer() 
+                        end
                     end)
                     task.wait(2)
                     pcall(function() 
@@ -1218,9 +1366,20 @@ task.spawn(function()
                 break
             end
         else
-            for i=1, 13 do
-                if not STATE["EP"..i.."_Done"] then allDone = false break end
-            end
+            if not STATE.EP1_Done then allDone = false end
+            if not STATE.EP2_Done then allDone = false end
+            if not STATE.EP3_Done then allDone = false end
+            if not STATE.EP4_Done then allDone = false end
+            if not STATE.EP5_Done then allDone = false end
+            if not STATE.EP6_Done then allDone = false end
+            if not STATE.EP7_Done then allDone = false end
+            if not STATE.EP8_Done then allDone = false end
+            if not STATE.EP9_Done then allDone = false end
+            if not STATE.EP10_Done then allDone = false end
+            if not STATE.EP11_Done then allDone = false end
+            if not STATE.EP12_Done then allDone = false end
+            if not STATE.EP13_Done then allDone = false end
+            
             if allDone then
                 DLog("SYSTEM", "🏆 All Easter Quests (EP1-EP13) Completed Successfully! Bot Stopped.")
                 break
