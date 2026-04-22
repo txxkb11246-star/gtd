@@ -39,7 +39,7 @@ local CONFIG = {
     },
     
     -- 🔄 AUTO SWITCH ID AFTER EP4
-    TEST_CHANGE_ID = true,
+    TEST_CHANGE_ID = false,
     
     -- EP1
     TargetUnit = "unit_egg_catapult",
