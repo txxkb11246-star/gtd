@@ -1,0 +1,1484 @@
+-- =====================================================================
+-- 🥚 SCRIPT: EASTER BOT LOBBY (FULL-SCALE 100% & MASTER CONTROL READY)
+-- =====================================================================
+
+-- 🛑 1. ANTI-DUPLICATION (Prevent double execution)
+if getgenv().LobbyBotRunning then
+    warn("❌ [ERROR] Script is already running! (Anti-Duplication active)")
+    return
+end
+
+getgenv().LobbyBotRunning = true
+
+repeat 
+    task.wait() 
+until game:IsLoaded()
+
+task.wait(4)
+
+--// SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+
+-- =====================================================================
+-- ⚙️ 2. CONFIGURATION (PART 2 & PART 1)
+-- =====================================================================
+local CONFIG = {
+    DEBUG_MODE = true,           
+    UI_CheckRate = 3,            
+    
+    -- 🛠️ TEST MODE CONFIGURATION
+    TEST_MODE = {
+        ENABLED = false,     
+        TARGET_QUEST = "All"
+    },
+    
+    -- 🎯 TARGET UNIT CONFIG
+    TargetUnit = "unit_egg_catapult",
+    ToolName = "Eggapult Plant",
+    Box_Name = "ub_easter",
+    
+    -- ===================================
+    -- 🐰 PART 2 CONFIG (EP1.1 to EP1.8)
+    -- ===================================
+    UI_Tab_Name = "easter26_2",
+    
+    -- 🌿 EP 1.1 (Seedling - FAST FIRE NO WAIT)
+    EP1_1_FullName = "Seedling Egg of Patient Gardening",
+    EP1_1_Short = "1.1 Seedling",
+    
+    -- 🍅 EP 1.2 (Tomato - เดิม 1.1)
+    EP1_2_FullName = "Tomato Egg of Indexed Importance",
+    EP1_2_Short = "1.2 Tomato",
+    
+    -- 🕷️ EP 1.3 (Black Widow - เดิม 1.2)
+    EP1_3_FullName = "Black Widow Egg of Creeping Consequences",
+    EP1_3_Short = "1.3 Widow",
+    EP1_3_CF = CFrame.new(233.158951, 77.2598724, 871.504883, 0.993389666, -0, -0.114790753, 0, 1, -0, 0.114790753, 0, 0.993389666),
+    EP1_3_Cooldown = 7,
+    
+    -- 📐 EP 1.4 (Blueprint - เดิม 1.3)
+    EP1_4_FullName = "Blueprint Egg of Architectural Ambition",
+    EP1_4_Short = "1.4 Blueprint",
+    
+    -- 🕳️ EP 1.5 (Void Egg - เดิม 1.4)
+    EP1_5_FullName = "Void Egg of Voluntary Descent",
+    EP1_5_Short = "1.5 Void",
+    EP1_5_Cooldown = 10,
+    
+    -- 🔴 EP 1.6 (Red Button Egg - เดิม 1.5)
+    EP1_6_FullName = "Red Button Egg of Pressing Matters", 
+    EP1_6_Short = "1.6 Buttons",
+    EP1_6_Cooldown = 10,
+    
+    -- 🥷 EP 1.7 (Ninja Egg - เดิม 1.6)
+    EP1_7_FullName = "Ninja Egg of Suspicious Shapeshifting",
+    EP1_7_Short = "1.7 Ninja",
+    EP1_7_Cooldown = 5,
+
+    -- 🌐 EP 1.8 (Social Egg - เดิม 1.7)
+    EP1_8_FullName = "Server Social Egg of Mildly Alarming Pings",
+    EP1_8_Short = "1.8 Social",
+    EP1_8_Code = "DROCSID",
+    
+    -- ===================================
+    -- 🥚 PART 1 CONFIG (EP1 & EP2 ONLY)
+    -- ===================================
+    PART1_Tab_Name = "easter26",
+    PART1_EP1_Name = "Colorful Egg",
+    
+    PART1_EP2_Name = "Checkpoint Egg",
+    ObbyPlatform = Vector3.new(124.720245, 687.629456 + 1.5, 2169.875),
+    ObbyDoor = Vector3.new(120.993431, 693.879456, 2170.04053),
+    EP2_WaitTime = 6
+}
+
+-- QUEST STATES
+local STATE = {
+    -- 🌟 EP1 Master State & Sub-States (Part 2)
+    EP1_Done = false,
+    EP1_1_Done = false, 
+    EP1_2_Done = false, 
+    EP1_3_Done = false, 
+    EP1_4_Done = false, 
+    EP1_5_Done = false, 
+    EP1_6_Done = false, 
+    EP1_7_Done = false,
+    EP1_8_Done = false,
+    
+    -- 🌟 Part 1 States
+    PART1_EP1_Done = false,
+    PART1_EP2_Done = false,
+    
+    IsTeleporting = false,
+    Catapult_Ready = false,
+    EGGS_LEFT = {},
+    ACTIVE_EP = "",
+    CURRENT_QUEST_STR = "Initializing...",
+    
+    -- 🌟 Lobby Tasks Sub-States
+    LOBBY_TASKS = {
+        EP1_1 = false,
+        EP1_2 = false,
+        EP1_3 = false,
+        EP1_4 = false,
+        EP1_5 = false,
+        EP1_6 = false,
+        EP1_7 = false,
+        EP1_8 = false
+    }
+}
+
+local function DLog(category, message)
+    if CONFIG.DEBUG_MODE then
+        print(string.format("[%s] %s", tostring(category), tostring(message)))
+    end
+end
+
+-- =====================================================================
+-- 🛡️ 3. BUG FIXER & ANTI-LAG
+-- =====================================================================
+task.spawn(
+    function()
+        pcall(
+            function()
+                local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents", 5)
+                if remoteEvents then
+                    local effectEvent = remoteEvents:WaitForChild("OnCharacterEffectApplied", 5)
+                    if effectEvent then
+                        if effectEvent:IsA("RemoteEvent") then
+                            effectEvent.OnClientEvent:Connect(
+                                function() 
+                                    -- Block visual effect lag
+                                end
+                            )
+                        end
+                    end
+                end
+            end
+        )
+    end
+)
+
+-- =====================================================================
+-- 🛠️ 4. STRICT REMOTES PATHS
+-- =====================================================================
+local RemoteFuncs = ReplicatedStorage:WaitForChild("RemoteFunctions")
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+
+local BuyRemote = RemoteFuncs:WaitForChild("BuyUnitBox")
+local EquipRemote = RemoteFuncs:WaitForChild("SetUnitEquipped")
+local BanRemote = RemoteEvents:WaitForChild("BanFromUnitBox")
+local CollectRemote = RemoteEvents:WaitForChild("CollectCollectable")
+local SellRemote = RemoteFuncs:WaitForChild("SellUnit")
+
+-- =====================================================================
+-- 🎒 5. SMART UNIT SELECTOR & INVENTORY CACHE
+-- =====================================================================
+local InventoryTableCache = nil
+
+local function UpdateInventoryCache()
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            pcall(
+                function()
+                    for uid, data in pairs(obj) do
+                        if type(uid) == "string" then
+                            if string.find(uid, "unique_", 1, true) then
+                                if data.ItemData then
+                                    if data.ItemData.ID then
+                                        InventoryTableCache = obj
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            )
+            
+            if InventoryTableCache then 
+                break 
+            end
+        end
+    end
+end
+
+local function GetUIDByName(targetName)
+    if not InventoryTableCache then 
+        UpdateInventoryCache() 
+    end
+    
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_", 1, true) then
+                    if data.ItemData then
+                        if data.ItemData.ID == targetName then
+                            return uid
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function HasRafflesia()
+    if not InventoryTableCache then 
+        UpdateInventoryCache() 
+    end
+    
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_", 1, true) then
+                    if data.ItemData then
+                        if data.ItemData.ID then
+                            if data.ItemData.ID == "unit_rafflesia" then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- =====================================================================
+-- 📦 6. INITIAL SUMMON & EQUIP SYSTEM (BLOCKING TASK)
+-- =====================================================================
+DLog("SYSTEM", "🔍 Checking for " .. CONFIG.TargetUnit .. " in inventory...")
+local catapultUID = GetUIDByName(CONFIG.TargetUnit)
+
+if not catapultUID then
+    DLog("SYSTEM", "📦 Not found " .. CONFIG.TargetUnit .. "! Starting Auto-Summon...")
+    STATE.CURRENT_QUEST_STR = "SUMMONING CATAPULT..."
+    
+    pcall(
+        function()
+            BanRemote:FireServer(CONFIG.Box_Name, CONFIG.TargetUnit, false)
+        end
+    )
+    task.wait(0.5)
+
+    local banList = {
+        "unit_lily", 
+        "unit_icecream", 
+        "unit_egg_beam", 
+        "unit_easter_flower", 
+        "unit_bunny", 
+        "unit_bunny_flower"
+    }
+    
+    for i = 1, #banList do
+        local name = banList[i]
+        pcall(
+            function()
+                BanRemote:FireServer(CONFIG.Box_Name, name, true)
+            end
+        )
+        task.wait(0.3)
+    end
+
+    DLog("SYSTEM", "✅ Unnecessary units banned. Rolling for " .. CONFIG.TargetUnit .. "...")
+
+    while not catapultUID do
+        pcall(
+            function()
+                BuyRemote:InvokeServer(CONFIG.Box_Name, 1)
+            end
+        )
+        task.wait(1.5)
+        
+        UpdateInventoryCache()
+        catapultUID = GetUIDByName(CONFIG.TargetUnit)
+    end
+
+    DLog("SYSTEM", "🎉 Successfully obtained " .. CONFIG.TargetUnit .. "!")
+else
+    DLog("SYSTEM", "✅ " .. CONFIG.TargetUnit .. " already in inventory. Skipping summon.")
+end
+
+pcall(
+    function()
+        EquipRemote:InvokeServer(catapultUID, true)
+    end
+)
+task.wait(1)
+
+STATE.Catapult_Ready = true
+
+-- =====================================================================
+-- 💰 7. SEEDS & EGGS TRACKER 
+-- =====================================================================
+local cachedSeedsText = "0"
+local cachedEggsText = "0"
+
+local function UpdateCurrenciesText()
+    pcall(
+        function()
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local gameGui = playerGui:FindFirstChild("GameGui")
+                if gameGui then
+                    local screen = gameGui:FindFirstChild("Screen")
+                    if screen then
+                        local bottom = screen:FindFirstChild("Bottom")
+                        if bottom then
+                            local currencyDisplay = bottom:FindFirstChild("CurrencyDisplay")
+                            if currencyDisplay then
+                                
+                                local seedsDisplay = currencyDisplay:FindFirstChild("SeedsDisplay")
+                                if seedsDisplay then
+                                    local title = seedsDisplay:FindFirstChild("Title")
+                                    if title then
+                                        cachedSeedsText = title.Text
+                                    end
+                                end
+                                
+                                local easterEggsDisplay = currencyDisplay:FindFirstChild("EasterEggsDisplay")
+                                if easterEggsDisplay then
+                                    local title = easterEggsDisplay:FindFirstChild("Title")
+                                    if title then
+                                        cachedEggsText = title.Text
+                                    end
+                                end
+                                
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    )
+end
+
+local function IsInLobby()
+    local map = Workspace:FindFirstChild("Map")
+    if map then
+        if map:FindFirstChild("Garden") ~= nil then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- =====================================================================
+-- 📡 8. HORST DIRECT SYNC THREAD
+-- =====================================================================
+local LAST_HORST_MSG = ""
+
+task.spawn(
+    function()
+        while true do
+            pcall(
+                function()
+                    if _G.Horst_SetDescription then
+                        UpdateCurrenciesText()
+                        
+                        local hasRaff = HasRafflesia()
+                        
+                        local raffStr = "False"
+                        if hasRaff then
+                            raffStr = "True"
+                        end
+                        
+                        local desc = string.format("🌱 %s , 🥚 %s , 🌸 Raff: %s", cachedSeedsText, cachedEggsText, raffStr)
+                        
+                        if IsInLobby() then
+                            local activeLobbyTasks = {}
+                            
+                            if not STATE.EP1_Done then
+                                if STATE.LOBBY_TASKS.EP1_1 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_1_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_2 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_2_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_3 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_3_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_4 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_4_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_5 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_5_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_6 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_6_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_7 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_7_Short) 
+                                end
+                                if STATE.LOBBY_TASKS.EP1_8 then 
+                                    table.insert(activeLobbyTasks, CONFIG.EP1_8_Short) 
+                                end
+                            else
+                                if not STATE.PART1_EP1_Done then
+                                    table.insert(activeLobbyTasks, "Part1: EP1")
+                                end
+                                
+                                if not STATE.PART1_EP2_Done then
+                                    table.insert(activeLobbyTasks, "Part1: EP2")
+                                end
+                            end
+                            
+                            if #activeLobbyTasks > 0 then
+                                local combinedQuests = table.concat(activeLobbyTasks, " , ")
+                                desc = desc .. string.format(" , 🎯 Quest: %s", combinedQuests)
+                            else
+                                if STATE.EP1_Done and STATE.PART1_EP1_Done and STATE.PART1_EP2_Done then
+                                    desc = desc .. string.format(" , 🎯 Quest: %s", STATE.CURRENT_QUEST_STR)
+                                else
+                                    desc = desc .. " , 🎯 Quest: Not Found (Bugged?)"
+                                end
+                            end
+                        else
+                            local questStr = STATE.CURRENT_QUEST_STR
+                            local activeEp = STATE.ACTIVE_EP
+                            
+                            if activeEp ~= "" then
+                                local eggsLeft = STATE.EGGS_LEFT[activeEp]
+                                if eggsLeft ~= nil then
+                                    if eggsLeft ~= 999 then
+                                        desc = desc .. string.format(" , 🎯 Quest: %s , Left: %d", questStr, eggsLeft)
+                                    else
+                                        desc = desc .. string.format(" , 🎯 Quest: %s", questStr)
+                                    end
+                                else
+                                    desc = desc .. string.format(" , 🎯 Quest: %s", questStr)
+                                end
+                            else
+                                desc = desc .. string.format(" , 🎯 Quest: %s", questStr)
+                            end
+                        end
+                        
+                        local json_data = {
+                            Quest = desc
+                        }
+                        local encode_json = HttpService:JSONEncode(json_data)
+                        
+                        if desc ~= LAST_HORST_MSG then
+                            LAST_HORST_MSG = desc
+                            _G.Horst_SetDescription(desc, encode_json)
+                        end
+                    end
+                end
+            )
+            
+            task.wait(10)
+        end
+    end
+)
+
+-- =====================================================================
+-- 🖱️ 9. UI MONITOR & QUEST PROGRESS TRACKER
+-- =====================================================================
+local GameGui = LocalPlayer.PlayerGui:WaitForChild("GameGui")
+local MainCollectUI = GameGui:WaitForChild("Screen"):WaitForChild("Middle"):WaitForChild("Collectables")
+
+local function RefreshAndCheckUI()
+    if STATE.IsTeleporting then 
+        return 
+    end 
+
+    pcall(
+        function()
+            local leftPanel = GameGui.Screen:WaitForChild("Left", 3)
+            if leftPanel then
+                local sidebar = leftPanel:WaitForChild("Sidebar", 3)
+                if sidebar then
+                    local items = sidebar:WaitForChild("Items", 3)
+                    if items then
+                        local collectables = items:WaitForChild("Collectables", 3)
+                        if collectables then
+                            local itemsInner = collectables:WaitForChild("Items", 3)
+                            if itemsInner then
+                                local SidebarBtn = itemsInner:WaitForChild("Button", 3)
+                                if SidebarBtn then
+                                    local connections = getconnections(SidebarBtn.MouseButton1Click)
+                                    for i = 1, #connections do
+                                        local c = connections[i]
+                                        c:Fire() 
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            task.wait(0.5) 
+            
+            -- 🌟 DYNAMIC TAB SELECTION (STRICT SEPARATION)
+            local targetTabName = ""
+            
+            if not STATE.EP1_Done then
+                targetTabName = CONFIG.UI_Tab_Name
+            else
+                targetTabName = CONFIG.PART1_Tab_Name
+            end
+            
+            local RightPanel = MainCollectUI:WaitForChild("Right", 3)
+            if RightPanel then
+                local targetTab = RightPanel:WaitForChild(targetTabName, 3)
+                if targetTab then
+                    local consTab = getconnections(targetTab.MouseButton1Click)
+                    for i = 1, #consTab do
+                        local c = consTab[i]
+                        c:Fire() 
+                    end
+                end
+            end
+
+            task.wait(1.5) 
+
+            local descendants = GameGui:GetDescendants()
+            for i = 1, #descendants do
+                local v = descendants[i]
+                if v:IsA("TextLabel") then
+                    local textLower = string.lower(v.Text)
+                    if string.find(textLower, "owned", 1, true) or string.find(textLower, "limit", 1, true) or string.find(textLower, "left", 1, true) then
+                        
+                        local currentType = ""
+                        local parentGroup = v.Parent
+                        if parentGroup then
+                            local grandParent = parentGroup.Parent
+                            if grandParent then
+                                local gpDescendants = grandParent:GetDescendants()
+                                for j = 1, #gpDescendants do
+                                    local child = gpDescendants[j]
+                                    if child:IsA("TextLabel") then
+                                        
+                                        local txt = string.lower(child.Text)
+                                        
+                                        if not STATE.EP1_Done then
+                                            -- 🌟 SCANNING PART 2 (WITH THAI LANGUAGE SUPPORT & EXPANDED KEYWORDS)
+                                            if string.find(txt, string.lower(CONFIG.EP1_1_FullName), 1, true) or string.find(txt, "seedling", 1, true) or string.find(txt, "ต้นกล้า", 1, true) or string.find(txt, "การทำสวน", 1, true) then 
+                                                currentType = "EP1_1" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_2_FullName), 1, true) or string.find(txt, "tomato", 1, true) or string.find(txt, "มะเขือเทศ", 1, true) then 
+                                                currentType = "EP1_2" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_3_FullName), 1, true) or string.find(txt, "widow", 1, true) or string.find(txt, "แม่ม่าย", 1, true) then 
+                                                currentType = "EP1_3" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_4_FullName), 1, true) or string.find(txt, "blueprint", 1, true) or string.find(txt, "พิมพ์เขียว", 1, true) then 
+                                                currentType = "EP1_4" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_5_FullName), 1, true) or string.find(txt, "void", 1, true) or string.find(txt, "ว่างเปล่า", 1, true) then 
+                                                currentType = "EP1_5" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_6_FullName), 1, true) or string.find(txt, "button", 1, true) or string.find(txt, "ปุ่มแดง", 1, true) then 
+                                                currentType = "EP1_6" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_7_FullName), 1, true) or string.find(txt, "ninja", 1, true) or string.find(txt, "นินจา", 1, true) then 
+                                                currentType = "EP1_7" 
+                                            elseif string.find(txt, string.lower(CONFIG.EP1_8_FullName), 1, true) or string.find(txt, "social", 1, true) or string.find(txt, "โซเชียล", 1, true) then 
+                                                currentType = "EP1_8" 
+                                            end
+                                        else
+                                            -- 🌟 SCANNING PART 1 (WITH THAI LANGUAGE SUPPORT)
+                                            if string.find(txt, string.lower(CONFIG.PART1_EP1_Name), 1, true) or string.find(txt, "colorful", 1, true) or string.find(txt, "หลากสี", 1, true) then 
+                                                currentType = "PART1_EP1" 
+                                            elseif string.find(txt, string.lower(CONFIG.PART1_EP2_Name), 1, true) or string.find(txt, "checkpoint", 1, true) or string.find(txt, "เช็คพอยต์", 1, true) then 
+                                                currentType = "PART1_EP2" 
+                                            end
+                                        end
+                                        
+                                    end
+                                end
+                            end
+                        end
+                        
+                        if currentType ~= "" then
+                            local availText = string.lower(v.Text)
+                            
+                            local avail = string.match(availText, "(%d+)%s+available")
+                            if not avail then
+                                avail = string.match(availText, "left:%s*(%d+)")
+                            end
+                            
+                            local limit = string.match(availText, "limit:%s*(%d+)")
+                            
+                            local owned = string.match(availText, "(%d+)%s+owned")
+                            if not owned then
+                                owned = string.match(availText, "owned:%s*(%d+)")
+                            end
+                            
+                            local isComplete = false
+                            local numLeft = 999 
+                            
+                            if string.find(availText, "full", 1, true) then
+                                isComplete = true
+                                numLeft = 0
+                            else
+                                if avail then
+                                    numLeft = tonumber(avail)
+                                    if numLeft <= 0 then 
+                                        isComplete = true 
+                                    end
+                                elseif owned and limit then
+                                    numLeft = tonumber(limit) - tonumber(owned)
+                                    if tonumber(limit) > 0 then
+                                        if tonumber(owned) >= tonumber(limit) then 
+                                            isComplete = true 
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            STATE.EGGS_LEFT[currentType] = numLeft
+
+                            if isComplete then
+                                if not STATE[currentType.."_Done"] then
+                                    STATE[currentType.."_Done"] = true
+                                    
+                                    if currentType == "EP1_1" then 
+                                        STATE.LOBBY_TASKS.EP1_1 = false 
+                                    end
+                                    if currentType == "EP1_2" then 
+                                        STATE.LOBBY_TASKS.EP1_2 = false 
+                                    end
+                                    if currentType == "EP1_3" then 
+                                        STATE.LOBBY_TASKS.EP1_3 = false 
+                                    end
+                                    if currentType == "EP1_4" then 
+                                        STATE.LOBBY_TASKS.EP1_4 = false 
+                                    end
+                                    if currentType == "EP1_5" then 
+                                        STATE.LOBBY_TASKS.EP1_5 = false 
+                                    end
+                                    if currentType == "EP1_6" then 
+                                        STATE.LOBBY_TASKS.EP1_6 = false 
+                                    end
+                                    if currentType == "EP1_7" then 
+                                        STATE.LOBBY_TASKS.EP1_7 = false 
+                                    end
+                                    if currentType == "EP1_8" then 
+                                        STATE.LOBBY_TASKS.EP1_8 = false 
+                                    end
+                                    
+                                    DLog("SCANNER", "✅ [COMPLETED]: " .. currentType .. " has reached its limit!")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- 🌟 MASTER CASCADE FIX (EVALUATE EVERY SCAN)
+            if STATE.EP1_1_Done then
+                if STATE.EP1_2_Done then
+                    if STATE.EP1_3_Done then
+                        if STATE.EP1_4_Done then
+                            if STATE.EP1_5_Done then
+                                if STATE.EP1_6_Done then
+                                    if STATE.EP1_7_Done then
+                                        if STATE.EP1_8_Done then
+                                            STATE.EP1_Done = true
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+        end
+    )
+end
+
+DLog("SYSTEM", "Running Pre-Scan on Quest UI...")
+RefreshAndCheckUI()
+DLog("SYSTEM", "Pre-Scan Complete! Starting Auto-Farm...")
+
+-- =====================================================================
+-- ⚙️ 10. THREAD 1: HORST SPACE LAUNCHER
+-- =====================================================================
+task.spawn(
+    function()
+        while true do
+            pcall(
+                function()
+                    if not getgenv().HorstRunning then
+                        getgenv().HorstConfig = { 
+                            ["EnableLog"] = false, 
+                            ["Whitescreen"] = false, 
+                            ["EnableAddFriends"] = false, 
+                            ["LockFps"] = { 
+                                ["EnableLockFps"] = false, 
+                                ["LockFpsAmount"] = 30 
+                            } 
+                        }
+                        local url = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+                        loadstring(game:HttpGet(url))()
+                        getgenv().HorstRunning = true
+                    end
+                end
+            )
+            
+            task.wait(30)
+        end
+    end
+)
+
+-- =====================================================================
+-- 🟢 11. THREAD 2: ANTI-AFK 
+-- =====================================================================
+task.spawn(
+    function()
+        pcall(
+            function()
+                local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+                local sg = Instance.new("ScreenGui")
+                sg.Name = "SimpleVIM_UI"
+                sg.Parent = playerGui
+
+                local dot = Instance.new("Frame")
+                dot.Size = UDim2.new(0, 10, 0, 10)
+                dot.Position = UDim2.new(0, 30, 1, -30)
+                dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                dot.BorderSizePixel = 0
+                dot.ZIndex = 999
+                dot.Parent = sg
+
+                local stroke = Instance.new("UIStroke")
+                stroke.Thickness = 2
+                stroke.Color = Color3.fromRGB(0, 0, 0)
+                stroke.Parent = dot
+
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(1, 0)
+                corner.Parent = dot
+            end
+        )
+
+        while true do
+            local waitTime = math.random(30, 80)
+            task.wait(waitTime)
+
+            pcall(
+                function()
+                    VirtualUser:CaptureController()
+                    local rx = math.random(1, 50)
+                    local ry = math.random(1, 50)
+                    VirtualUser:ClickButton2(Vector2.new(rx, ry))
+                end
+            )
+        end
+    end
+)
+
+-- =====================================================================
+-- 🥚 12. THREAD 3: SILENT FAST COLLECTOR
+-- =====================================================================
+task.spawn(
+    function()
+        local function TryCollect(obj)
+            local id = obj:GetAttribute("ID")
+            if id then
+                if type(id) == "number" then
+                    pcall(
+                        function() 
+                            CollectRemote:FireServer(id) 
+                        end
+                    )
+                    
+                    return true
+                end
+            end
+            
+            return false
+        end
+
+        Workspace.DescendantAdded:Connect(
+            function(obj)
+                if TryCollect(obj) then 
+                    return 
+                end
+                
+                local conn
+                conn = obj:GetAttributeChangedSignal("ID"):Connect(
+                    function()
+                        TryCollect(obj)
+                        if conn then 
+                            conn:Disconnect() 
+                        end
+                    end
+                )
+                
+                task.delay(
+                    2, 
+                    function()
+                        if conn then 
+                            conn:Disconnect() 
+                        end
+                    end
+                )
+            end
+        )
+
+        while true do
+            local descendants = Workspace:GetDescendants()
+            for i = 1, #descendants do
+                local v = descendants[i]
+                local id = v:GetAttribute("ID")
+                if id then 
+                    pcall(
+                        function() 
+                            CollectRemote:FireServer(id) 
+                        end
+                    ) 
+                end
+            end
+            
+            task.wait(3) 
+        end
+    end
+)
+
+-- =====================================================================
+-- 🎯 13. THREAD 4: LOBBY TASKS (PART 2 & PART 1)
+-- =====================================================================
+task.spawn(
+    function()
+        local lastLog_1_1 = 0
+        local lastLog_1_2 = 0
+        local lastLog_1_3 = 0
+        local lastLog_1_4 = 0
+        local lastLog_1_5 = 0
+        local lastLog_1_6 = 0
+        local lastLog_1_7 = 0
+        local lastLog_1_8 = 0
+        local lastLog_PART1_EP2 = 0
+        
+        while true do
+            if not IsInLobby() then 
+                task.wait(2) 
+                continue 
+            end
+
+            local shouldRunLobby = true
+            if CONFIG.TEST_MODE.ENABLED then
+                -- ⬇️ [รอเช็คเงื่อนไขโหมดเทสที่นี่ถ้ามี] ⬇️
+            end
+
+            if shouldRunLobby then
+                
+                if not STATE.EP1_Done then
+                    -- ==========================================
+                    -- 🐰 PART 2 LOGIC (EP1.1 to EP1.8)
+                    -- ==========================================
+                    
+                    -- 🌿 1.1 SEEDLING EGG (NEW LOGIC - SAFE CFRAME WARP TO BASEPART AND WAIT FOR EGG)
+                    local runEP1_1 = false
+                    if not STATE.EP1_1_Done then
+                        runEP1_1 = true
+                    end
+                    
+                    if runEP1_1 then
+                        STATE.LOBBY_TASKS.EP1_1 = true
+                        if os.time() - lastLog_1_1 >= 5 then
+                            DLog("LOBBY", "🌿 [WORKING ON]: 1.1 Seedling Egg (Warping & Interacting)")
+                            lastLog_1_1 = os.time()
+                        end
+                        
+                        pcall(
+                            function()
+                                local map = Workspace:FindFirstChild("Map")
+                                if map then
+                                    local eggSpawners = map:FindFirstChild("EGG_SPAWNERS_easter26_2")
+                                    if eggSpawners then
+                                        local seedling = eggSpawners:FindFirstChild("seedling")
+                                        if seedling then
+                                            local assets = seedling:FindFirstChild("Assets")
+                                            if assets then
+                                                local eggObj = assets:FindFirstChild("Egg")
+                                                if eggObj then
+                                                    -- 🌟 If the Egg is visible, the quest objective is complete for this stage!
+                                                    STATE.EP1_1_Done = true
+                                                    DLog("LOBBY", "✅ 1.1 Seedling Egg is PLANTED! Moving on...")
+                                                else
+                                                    -- Keep trying to plant it
+                                                    local interactNode1 = assets:FindFirstChild("Interact")
+                                                    if interactNode1 then
+                                                        local interactNode2 = interactNode1:FindFirstChild("Interact")
+                                                        if interactNode2 then
+                                                            local prompt = interactNode2:FindFirstChild("ProximityPrompt")
+                                                            if prompt then
+                                                                local char = LocalPlayer.Character
+                                                                if char then
+                                                                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                                                                    if hrp then
+                                                                        if interactNode1:IsA("BasePart") then
+                                                                            hrp.CFrame = interactNode1.CFrame
+                                                                            task.wait(0.2)
+                                                                            
+                                                                            if fireproximityprompt then
+                                                                                pcall(
+                                                                                    function()
+                                                                                        fireproximityprompt(prompt)
+                                                                                    end
+                                                                                )
+                                                                            end
+                                                                        end
+                                                                    end
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        )
+                    else
+                        STATE.LOBBY_TASKS.EP1_1 = false
+                    end
+                    
+                    if not STATE.EP1_1_Done then
+                        task.wait(0.2)
+                        continue
+                    end
+                    
+                    -- ==========================================
+                    -- ⚡ CONCURRENT TASKS (ไม่ต้องวาร์ป)
+                    -- ==========================================
+                    
+                    -- 🍅 1.2 TOMATO EGG
+                    local runEP1_2 = false
+                    if not STATE.EP1_2_Done then
+                        runEP1_2 = true
+                    end
+                    
+                    if runEP1_2 then
+                        STATE.LOBBY_TASKS.EP1_2 = true
+                        if os.time() - lastLog_1_2 >= 5 then
+                            DLog("LOBBY", "▶️ [WORKING ON]: 1.2 Tomato Egg (Spamming IndexClick)")
+                            lastLog_1_2 = os.time()
+                        end
+                        
+                        pcall(
+                            function()
+                                local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents", 5)
+                                if remoteEvents then
+                                    local indexClick = remoteEvents:WaitForChild("IndexClick", 5)
+                                    if indexClick then
+                                        local args = {
+                                            [1] = "unit_tomato_plant"
+                                        }
+                                        indexClick:FireServer(unpack(args))
+                                    end
+                                end
+                            end
+                        )
+                    else
+                        STATE.LOBBY_TASKS.EP1_2 = false
+                    end
+
+                    -- 📐 1.4 BLUEPRINT EGG
+                    local runEP1_4 = false
+                    if not STATE.EP1_4_Done then
+                        runEP1_4 = true
+                    end
+                    
+                    if runEP1_4 then
+                        STATE.LOBBY_TASKS.EP1_4 = true
+                        if os.time() - lastLog_1_4 >= 5 then
+                            DLog("LOBBY", "▶️ [WORKING ON]: 1.4 Blueprint Egg (Firing ClickDetectors)")
+                            lastLog_1_4 = os.time()
+                        end
+                        
+                        task.spawn(
+                            function()
+                                pcall(
+                                    function()
+                                        local map = Workspace:FindFirstChild("Map")
+                                        if map then
+                                            local eggSpawners = map:FindFirstChild("EGG_SPAWNERS_easter26_2")
+                                            if eggSpawners then
+                                                local blueprint = eggSpawners:FindFirstChild("blueprint")
+                                                if blueprint then
+                                                    local folder = blueprint:FindFirstChild("Folder")
+                                                    if folder then
+                                                        local model = folder:FindFirstChild("Model")
+                                                        if model then
+                                                            local descendants = model:GetDescendants()
+                                                            for i = 1, #descendants do
+                                                                local descObj = descendants[i]
+                                                                if descObj then
+                                                                    local clickDetector = descObj:FindFirstChildOfClass("ClickDetector")
+                                                                    if clickDetector then
+                                                                        if fireclickdetector then
+                                                                            pcall(
+                                                                                function()
+                                                                                    fireclickdetector(clickDetector)
+                                                                                end
+                                                                            )
+                                                                            
+                                                                            task.wait(0.05)
+                                                                        end
+                                                                    end
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                )
+                            end
+                        )
+                    else
+                        STATE.LOBBY_TASKS.EP1_4 = false
+                    end
+                    
+                    -- ==========================================
+                    -- 🚶 SEQUENTIAL TASKS (วาร์ปตัวละคร + ลำดับคิว)
+                    -- ==========================================
+                    local runEP1_3 = false
+                    local runEP1_8 = false
+                    local runEP1_5 = false
+                    local runEP1_6 = false
+                    local runEP1_7 = false
+                    
+                    if not STATE.EP1_3_Done then
+                        runEP1_3 = true
+                    elseif not STATE.EP1_8_Done then
+                        runEP1_8 = true
+                    elseif not STATE.EP1_5_Done then
+                        runEP1_5 = true
+                    elseif not STATE.EP1_6_Done then
+                        runEP1_6 = true
+                    elseif not STATE.EP1_7_Done then
+                        runEP1_7 = true
+                    end
+                    
+                    -- 🕷️ 1.3 BLACK WIDOW EGG
+                    if runEP1_3 then
+                        STATE.LOBBY_TASKS.EP1_3 = true
+                        if os.time() - lastLog_1_3 >= CONFIG.EP1_3_Cooldown then
+                            DLog("LOBBY", "🕷️ [WORKING ON]: 1.3 Black Widow Egg (Warping...)")
+                            pcall(
+                                function()
+                                    local char = LocalPlayer.Character
+                                    if char then
+                                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                                        if hrp then
+                                            hrp.CFrame = CONFIG.EP1_3_CF
+                                        end
+                                    end
+                                end
+                            )
+                            
+                            lastLog_1_3 = os.time()
+                        end
+                    else
+                        STATE.LOBBY_TASKS.EP1_3 = false
+                    end
+                    
+                    -- 🌐 1.8 SOCIAL EGG (REDEEM CODE) - ทำต่อจาก 1.3 ทันที
+                    if runEP1_8 then
+                        STATE.LOBBY_TASKS.EP1_8 = true
+                        if os.time() - lastLog_1_8 >= 10 then
+                            DLog("LOBBY", "🌐 [WORKING ON]: 1.8 Social Egg (Redeeming Code: " .. CONFIG.EP1_8_Code .. ")")
+                            pcall(
+                                function()
+                                    local remoteFuncs = ReplicatedStorage:WaitForChild("RemoteFunctions", 5)
+                                    if remoteFuncs then
+                                        local redeemCode = remoteFuncs:WaitForChild("RedeemCode", 5)
+                                        if redeemCode then
+                                            redeemCode:InvokeServer(CONFIG.EP1_8_Code)
+                                        end
+                                    end
+                                end
+                            )
+                            
+                            lastLog_1_8 = os.time()
+                        end
+                    else
+                        STATE.LOBBY_TASKS.EP1_8 = false
+                    end
+                    
+                    -- 🕳️ 1.5 VOID EGG 
+                    if runEP1_5 then
+                        STATE.LOBBY_TASKS.EP1_5 = true
+                        if os.time() - lastLog_1_5 >= CONFIG.EP1_5_Cooldown then
+                            DLog("LOBBY", "🕳️ [WORKING ON]: 1.5 Void Egg (Falling off map...)")
+                            pcall(
+                                function()
+                                    local char = LocalPlayer.Character
+                                    if char then
+                                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                                        if hrp then
+                                            hrp.CFrame = CFrame.new(0, -5000, 0)
+                                        end
+                                    end
+                                end
+                            )
+                            
+                            lastLog_1_5 = os.time()
+                        end
+                    else
+                        STATE.LOBBY_TASKS.EP1_5 = false
+                    end
+                    
+                    -- 🔴 1.6 RED BUTTON EGG
+                    if runEP1_6 then
+                        STATE.LOBBY_TASKS.EP1_6 = true
+                        if os.time() - lastLog_1_6 >= CONFIG.EP1_6_Cooldown then
+                            DLog("LOBBY", "🔴 [WORKING ON]: 1.6 Red Button Egg (Warping & Pressing)")
+                            lastLog_1_6 = os.time()
+                            
+                            task.spawn(
+                                function()
+                                    pcall(
+                                        function()
+                                            local map = Workspace:FindFirstChild("Map")
+                                            if map then
+                                                local eggSpawners = map:FindFirstChild("EGG_SPAWNERS_easter26_2")
+                                                if eggSpawners then
+                                                    local redbutton = eggSpawners:FindFirstChild("redbutton")
+                                                    if redbutton then
+                                                        local buttons = redbutton:FindFirstChild("Buttons")
+                                                        if buttons then
+                                                            local prompts = {}
+                                                            local descendants = buttons:GetDescendants()
+                                                            
+                                                            for i = 1, #descendants do
+                                                                local descObj = descendants[i]
+                                                                if descObj then
+                                                                    if descObj:IsA("ProximityPrompt") then
+                                                                        table.insert(prompts, descObj)
+                                                                    end
+                                                                end
+                                                            end
+                                                            
+                                                            local char = LocalPlayer.Character
+                                                            if char then
+                                                                local hrp = char:FindFirstChild("HumanoidRootPart")
+                                                                if hrp then
+                                                                    for i = 1, #prompts do
+                                                                        local prompt = prompts[i]
+                                                                        if prompt then
+                                                                            local targetPart = prompt.Parent
+                                                                            if targetPart then
+                                                                                if targetPart:IsA("Attachment") then
+                                                                                    targetPart = targetPart.Parent
+                                                                                end
+                                                                                
+                                                                                if targetPart then
+                                                                                    if targetPart:IsA("BasePart") then
+                                                                                        hrp.CFrame = targetPart.CFrame
+                                                                                        task.wait(0.2)
+                                                                                        
+                                                                                        if fireproximityprompt then
+                                                                                            pcall(
+                                                                                                function()
+                                                                                                    fireproximityprompt(prompt)
+                                                                                                end
+                                                                                            )
+                                                                                        end
+                                                                                        
+                                                                                        task.wait(0.1)
+                                                                                    end
+                                                                                end
+                                                                            end
+                                                                        end
+                                                                    end
+                                                                end
+                                                            end
+                                                            
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    )
+                                end
+                            )
+                        end
+                    else
+                        STATE.LOBBY_TASKS.EP1_6 = false
+                    end
+                    
+                    -- 🥷 1.7 NINJA EGG
+                    if runEP1_7 then
+                        STATE.LOBBY_TASKS.EP1_7 = true
+                        if os.time() - lastLog_1_7 >= CONFIG.EP1_7_Cooldown then
+                            DLog("LOBBY", "🥷 [WORKING ON]: 1.7 Ninja Egg (Warping & Pressing)")
+                            lastLog_1_7 = os.time()
+                            
+                            task.spawn(
+                                function()
+                                    pcall(
+                                        function()
+                                            local map = Workspace:FindFirstChild("Map")
+                                            if map then
+                                                local eggSpawners = map:FindFirstChild("EGG_SPAWNERS_easter26_2")
+                                                if eggSpawners then
+                                                    local shapeshifter = eggSpawners:FindFirstChild("shapeshifter")
+                                                    if shapeshifter then
+                                                        local model = shapeshifter:FindFirstChild("Model")
+                                                        if model then
+                                                            local prompts = {}
+                                                            local descendants = model:GetDescendants()
+                                                            
+                                                            for i = 1, #descendants do
+                                                                local descObj = descendants[i]
+                                                                if descObj then
+                                                                    if descObj:IsA("ProximityPrompt") then
+                                                                        table.insert(prompts, descObj)
+                                                                    end
+                                                                end
+                                                            end
+                                                            
+                                                            if #prompts > 0 then
+                                                                local targetPrompt = prompts[1]
+                                                                local char = LocalPlayer.Character
+                                                                if char then
+                                                                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                                                                    if hrp then
+                                                                        local targetPart = targetPrompt.Parent
+                                                                        if targetPart then
+                                                                            if targetPart:IsA("Attachment") then
+                                                                                targetPart = targetPart.Parent
+                                                                            end
+                                                                            
+                                                                            if targetPart then
+                                                                                if targetPart:IsA("BasePart") then
+                                                                                    hrp.CFrame = targetPart.CFrame
+                                                                                    task.wait(0.2)
+                                                                                    
+                                                                                    if fireproximityprompt then
+                                                                                        pcall(
+                                                                                            function()
+                                                                                                fireproximityprompt(targetPrompt)
+                                                                                            end
+                                                                                        )
+                                                                                    end
+                                                                                    
+                                                                                end
+                                                                            end
+                                                                        end
+                                                                    end
+                                                                end
+                                                            end
+                                                            
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    )
+                                end
+                            )
+                        end
+                    else
+                        STATE.LOBBY_TASKS.EP1_7 = false
+                    end
+                    
+                else
+                    -- ==========================================
+                    -- 🥚 PART 1 LOGIC (EP1 & EP2)
+                    -- ==========================================
+                    local runPART1_EP2 = false
+                    if not STATE.PART1_EP2_Done then
+                        runPART1_EP2 = true
+                    end
+                    
+                    if runPART1_EP2 then
+                        STATE.CURRENT_QUEST_STR = "Part1: EP2"
+                        if os.time() - lastLog_PART1_EP2 >= 5 then
+                            DLog("LOBBY", "▶️ [WORKING ON]: Part1: EP2 (Obby Sniper)")
+                            lastLog_PART1_EP2 = os.time()
+                        end
+                        
+                        local map = Workspace:FindFirstChild("Map")
+                        if map then
+                            local obby = map:FindFirstChild("ARGObby")
+                            if obby then
+                                local descendants = obby:GetDescendants()
+                                for i = 1, #descendants do
+                                    local v = descendants[i]
+                                    if v:IsA("ProximityPrompt") then
+                                        if v.Name == "InteractionPrompt" then
+                                            local parentPart = v.Parent
+                                            if parentPart then
+                                                local char = LocalPlayer.Character
+                                                if char then
+                                                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                                                    if hrp then
+                                                        hrp.CFrame = CFrame.lookAt(CONFIG.ObbyPlatform, CONFIG.ObbyDoor)
+                                                        task.wait(0.4)
+                                                        
+                                                        local children = parentPart:GetChildren()
+                                                        for j = 1, #children do
+                                                            local obj = children[j]
+                                                            if obj:IsA("RemoteEvent") then 
+                                                                pcall(
+                                                                    function() 
+                                                                        obj:FireServer() 
+                                                                    end
+                                                                )
+                                                            end 
+                                                        end
+                                                        
+                                                        task.wait(CONFIG.EP2_WaitTime)
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        -- IF EP2 IS DONE, JUST WAIT FOR EP1 (COLORFUL)
+                        if not STATE.PART1_EP1_Done then
+                            STATE.CURRENT_QUEST_STR = "Part1: EP1"
+                        else
+                            STATE.CURRENT_QUEST_STR = "SWITCHING ID..."
+                        end
+                    end
+                end
+                
+            end
+            
+            task.wait(0.2)
+        end
+    end
+)
+
+-- =====================================================================
+-- ⚔️ 14. THREAD 5: MATCH LOGIC
+-- =====================================================================
+task.spawn(
+    function()
+        while true do
+            local currentQuest = nil
+            
+            -- ⬇️ [รอใส่ระบบ เรียงลำดับคิวลงดันเจี้ยน ตรงนี้] ⬇️
+
+            if currentQuest then
+                STATE.ACTIVE_EP = currentQuest
+                STATE.CURRENT_QUEST_STR = currentQuest
+                
+                -- ⬇️ [รอใส่ระบบ ด่านฟาร์ม ตรงนี้] ⬇️
+                
+            end
+            
+            task.wait(2)
+        end
+    end
+)
+
+-- =====================================================================
+-- 🗡️ 15. THREAD 6: AUTO EQUIP CATAPULT TOOL (IN HANDS)
+-- =====================================================================
+task.spawn(
+    function()
+        while true do
+            pcall(
+                function()
+                    local char = LocalPlayer.Character
+                    if char then
+                        local humanoid = char:FindFirstChildOfClass("Humanoid")
+                        if humanoid then
+                            local isHolding = false
+                            local children = char:GetChildren()
+                            
+                            for i = 1, #children do
+                                local child = children[i]
+                                if child then
+                                    if child:IsA("Tool") then
+                                        if child.Name == CONFIG.ToolName then
+                                            isHolding = true
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            if isHolding == false then
+                                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                                if backpack then
+                                    local targetTool = backpack:FindFirstChild(CONFIG.ToolName)
+                                    if targetTool then
+                                        if targetTool:IsA("Tool") then
+                                            pcall(
+                                                function()
+                                                    humanoid:EquipTool(targetTool)
+                                                end
+                                            )
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            )
+            
+            task.wait(1)
+        end
+    end
+)
+
+-- =====================================================================
+-- 📊 16. MAIN THREAD: MASTER PROGRESS MONITOR
+-- =====================================================================
+task.spawn(
+    function()
+        while true do
+            RefreshAndCheckUI()
+            
+            local allDone = true
+            
+            if CONFIG.TEST_MODE.ENABLED then
+                -- ⬇️ [รอใส่ระบบ เช็ค TEST MODE ตรงนี้] ⬇️
+            else
+                
+                if not STATE.EP1_Done then
+                    allDone = false
+                end
+                
+                if STATE.EP1_Done then
+                    if not STATE.PART1_EP1_Done then
+                        allDone = false
+                    end
+                    
+                    if not STATE.PART1_EP2_Done then
+                        allDone = false
+                    end
+                end
+                
+                if allDone then
+                    STATE.ACTIVE_EP = ""
+                    STATE.CURRENT_QUEST_STR = "LOBBY SCRIPT DONE"
+                    
+                    DLog("SYSTEM", "✅ สคริปต์ Lobby ทำงานเสร็จสมบูรณ์แล้ว!")
+                    
+                    -- ส่งสัญญาณให้สคริปต์หลักรู้ว่าเสร็จแล้ว
+                    getgenv().LobbyBotFinished = true
+                    
+                    break
+                end
+            end
+            
+            task.wait(CONFIG.UI_CheckRate)
+        end
+    end
+)
