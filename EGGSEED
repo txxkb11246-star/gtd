@@ -1,1 +1,1223 @@
+-- =====================================================================
+-- 🚀 FULL-SCALE 100% MASTER SCRIPT: AUTO EGG + AFK + DUAL BOX + CENTRAL HORST SYNC + MASTER LOCK
+-- =====================================================================
 
+-- =====================================================================
+-- ⚙️ CONFIG & STATE SETTINGS
+-- =====================================================================
+local CONFIG = {
+    
+    TargetEgg_Name = "Raggedy Egg of Raggedy Ralph",
+    
+    DEBUG_MODE = true
+    
+}
+
+local STATE = {
+    
+    EGGS_LEFT = {},
+    
+    TargetEgg_Done = false,
+    
+    SniperQuest_String = " , 🥚 สถานะ: กำลังเตรียมตัว...",
+    
+    BoxQuest_String = " , 📦 เควสสุ่มกล่อง: กำลังเตรียมตัว...",
+    
+    SniperQuest_Finished = false,
+    
+    BoxQuest_Finished = false,
+    
+    -- 🚨 ตัวแปรแม่กุญแจสำหรับล็อกไม่ให้สคริปต์ตัดจบก่อนกำหนด
+    Master_Sync_Completed = false
+    
+}
+
+-- =====================================================================
+-- 🛠️ เริ่มต้นเรียกใช้งาน Service และดึง UI พื้นฐาน
+-- =====================================================================
+local Players = game:GetService("Players")
+local WorkspaceService = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local GameGui = PlayerGui:WaitForChild("GameGui")
+local Screen = GameGui:WaitForChild("Screen")
+local Middle = Screen:WaitForChild("Middle")
+local MainCollectUI = Middle:WaitForChild("Collectables")
+
+-- =====================================================================
+-- 🎒 INVENTORY CACHE & RAFFLESIA CHECKER
+-- =====================================================================
+local InventoryTableCache = nil
+
+local function UpdateInventoryCache()
+    
+    local GCData = getgc(true)
+    local GCIndex = 1
+    
+    while GCIndex <= #GCData do
+        
+        local CurrentObject = GCData[GCIndex]
+        
+        if type(CurrentObject) == "table" then
+            
+            pcall(
+                function()
+                    
+                    local Key, Value = next(CurrentObject, nil)
+                    
+                    while Key ~= nil do
+                        
+                        if type(Key) == "string" then
+                            
+                            local FoundUnique = string.find(Key, "unique_", 1, true)
+                            
+                            if FoundUnique then
+                                
+                                if Value.ItemData then
+                                    
+                                    if Value.ItemData.ID then
+                                        
+                                        InventoryTableCache = CurrentObject
+                                        
+                                    end
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                        
+                        Key, Value = next(CurrentObject, Key)
+                        
+                    end
+                    
+                end
+            )
+            
+            if InventoryTableCache ~= nil then
+                
+                break
+                
+            end
+            
+        end
+        
+        GCIndex = GCIndex + 1
+        
+    end
+    
+end
+
+local function HasRafflesia()
+    
+    if InventoryTableCache == nil then
+        
+        UpdateInventoryCache()
+        
+    end
+    
+    if InventoryTableCache ~= nil then
+        
+        local Key, Value = next(InventoryTableCache, nil)
+        
+        while Key ~= nil do
+            
+            if type(Key) == "string" then
+                
+                local FoundUnique = string.find(Key, "unique_", 1, true)
+                
+                if FoundUnique then
+                    
+                    if Value.ItemData then
+                        
+                        if Value.ItemData.ID then
+                            
+                            if Value.ItemData.ID == "unit_rafflesia" then
+                                
+                                return true
+                                
+                            end
+                            
+                        end
+                        
+                    end
+                    
+                end
+                
+            end
+            
+            Key, Value = next(InventoryTableCache, Key)
+            
+        end
+        
+    end
+    
+    return false
+    
+end
+
+-- =====================================================================
+-- 💰 SEEDS & EGGS TRACKER
+-- =====================================================================
+local cachedSeedsText = "0"
+local cachedEggsText = "0"
+
+local function UpdateCurrenciesText()
+    
+    pcall(
+        function()
+            
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            
+            if playerGui then
+                
+                local gameGui = playerGui:FindFirstChild("GameGui")
+                
+                if gameGui then
+                    
+                    local screen = gameGui:FindFirstChild("Screen")
+                    
+                    if screen then
+                        
+                        local bottom = screen:FindFirstChild("Bottom")
+                        
+                        if bottom then
+                            
+                            local currencyDisplay = bottom:FindFirstChild("CurrencyDisplay")
+                            
+                            if currencyDisplay then
+                                
+                                local seedsDisplay = currencyDisplay:FindFirstChild("SeedsDisplay")
+                                
+                                if seedsDisplay then
+                                    
+                                    local title = seedsDisplay:FindFirstChild("Title")
+                                    
+                                    if title then
+                                        
+                                        cachedSeedsText = title.Text
+                                        
+                                    end
+                                    
+                                end
+                                
+                                local easterEggsDisplay = currencyDisplay:FindFirstChild("EasterEggsDisplay")
+                                
+                                if easterEggsDisplay then
+                                    
+                                    local title = easterEggsDisplay:FindFirstChild("Title")
+                                    
+                                    if title then
+                                        
+                                        cachedEggsText = title.Text
+                                        
+                                    end
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                        
+                    end
+                    
+                end
+                
+            end
+            
+        end
+    )
+    
+end
+
+-- 🚨 ดักรอจนกว่าเกมจะโหลด UI ตัวเลขเสร็จ (ห้ามส่งค่า 0)
+local function EnsureCurrenciesLoaded()
+    
+    local LoadingComplete = false
+    local TimeoutCounter = 15 -- ปรับลดเหลือ 15 วิ เผื่อในกรณีที่เพิ่งเริ่มเล่นแล้วเงินเป็น 0 จริงๆ จะได้ไม่ค้าง
+    
+    while LoadingComplete == false do
+        
+        UpdateCurrenciesText()
+        
+        local SeedIsGood = false
+        local EggIsGood = false
+        
+        if cachedSeedsText ~= nil then
+            
+            if cachedSeedsText ~= "0" then
+                
+                if cachedSeedsText ~= "" then
+                    
+                    SeedIsGood = true
+                    
+                end
+                
+            end
+            
+        end
+        
+        if cachedEggsText ~= nil then
+            
+            if cachedEggsText ~= "0" then
+                
+                if cachedEggsText ~= "" then
+                    
+                    EggIsGood = true
+                    
+                end
+                
+            end
+            
+        end
+        
+        if SeedIsGood == true then
+            
+            if EggIsGood == true then
+                
+                LoadingComplete = true
+                
+            end
+            
+        end
+        
+        if TimeoutCounter <= 0 then
+            
+            LoadingComplete = true
+            
+        end
+        
+        if LoadingComplete == false then
+            
+            task.wait(1)
+            TimeoutCounter = TimeoutCounter - 1
+            
+        end
+        
+    end
+    
+end
+
+-- =====================================================================
+-- 🔍 MASTER FUNCTION: ระบบสแกนไข่ขั้นเทพ (Dumper Scan)
+-- =====================================================================
+local function RefreshAndCheckUI()
+    
+    pcall(
+        function()
+            
+            local leftPanel = GameGui.Screen:WaitForChild("Left")
+            local sidebar = leftPanel:WaitForChild("Sidebar")
+            local items = sidebar:WaitForChild("Items")
+            local collectables = items:WaitForChild("Collectables")
+            local itemsInner = collectables:WaitForChild("Items")
+            local SidebarBtn = itemsInner:WaitForChild("Button")
+            
+            if SidebarBtn then
+                
+                local connections = getconnections(SidebarBtn.MouseButton1Click)
+                local btnIndex = 1
+                
+                while btnIndex <= #connections do
+                    
+                    local c = connections[btnIndex]
+                    c:Fire()
+                    btnIndex = btnIndex + 1
+                    
+                end
+                
+            end
+            
+            local RightPanel = MainCollectUI:WaitForChild("Right", 3)
+            
+            if RightPanel then
+                
+                local EasterTab = RightPanel:WaitForChild("easter26", 3)
+                
+                if EasterTab then
+                    
+                    local consTab = getconnections(EasterTab.MouseButton1Click)
+                    local tabIndex = 1
+                    
+                    while tabIndex <= #consTab do
+                        
+                        local c = consTab[tabIndex]
+                        c:Fire()
+                        tabIndex = tabIndex + 1
+                        
+                    end
+                    
+                end
+                
+            end
+            
+            task.wait(1.5)
+            
+            local descendants = GameGui:GetDescendants()
+            local scanIndex = 1
+            
+            while scanIndex <= #descendants do
+                
+                local v = descendants[scanIndex]
+                
+                if v:IsA("TextLabel") then
+                    
+                    local textLower = string.lower(v.Text)
+                    
+                    local foundOwned = string.find(textLower, "owned", 1, true)
+                    local foundLimit = string.find(textLower, "limit", 1, true)
+                    local foundLeft = string.find(textLower, "left", 1, true)
+                    local foundFullText = string.find(textLower, "full", 1, true)
+                    
+                    if foundOwned or foundLimit or foundLeft or foundFullText then
+                        
+                        local eggName = "Unknown Egg"
+                        local parentGroup = v.Parent
+                        
+                        if parentGroup then
+                            
+                            local grandParent = parentGroup.Parent
+                            
+                            if grandParent then
+                                
+                                local gpDescendants = grandParent:GetDescendants()
+                                local gpIndex = 1
+                                local FoundName = false
+                                
+                                while gpIndex <= #gpDescendants do
+                                    
+                                    if FoundName == true then
+                                        
+                                        break
+                                        
+                                    end
+                                    
+                                    local child = gpDescendants[gpIndex]
+                                    
+                                    if child:IsA("TextLabel") then
+                                        
+                                        if child ~= v then
+                                            
+                                            local childTextLower = string.lower(child.Text)
+                                            local foundEggWord = string.find(childTextLower, "egg", 1, true)
+                                            
+                                            if foundEggWord then
+                                                
+                                                eggName = child.Text
+                                                FoundName = true
+                                                
+                                            else
+                                                
+                                                local lenCheck = string.len(child.Text)
+                                                local checkOwned = string.find(childTextLower, "owned", 1, true)
+                                                
+                                                if lenCheck > 10 then
+                                                    
+                                                    if not checkOwned then
+                                                        
+                                                        eggName = child.Text
+                                                        FoundName = true
+                                                        
+                                                    end
+                                                    
+                                                end
+                                                
+                                            end
+                                            
+                                        end
+                                        
+                                    end
+                                    
+                                    gpIndex = gpIndex + 1
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                        
+                        eggName = string.gsub(eggName, "\n", " ")
+                        
+                        local isTargetEgg = string.find(string.lower(eggName), string.lower(CONFIG.TargetEgg_Name), 1, true)
+                        
+                        if isTargetEgg then
+                            
+                            local availText = string.lower(v.Text)
+                            
+                            local avail = string.match(availText, "(%d+)%s+available")
+                            
+                            if not avail then
+                                
+                                avail = string.match(availText, "left:%s*(%d+)")
+                                
+                            end
+                            
+                            local limit = string.match(availText, "limit:%s*(%d+)")
+                            
+                            local owned = string.match(availText, "(%d+)%s+owned")
+                            
+                            if not owned then
+                                
+                                owned = string.match(availText, "owned:%s*(%d+)")
+                                
+                            end
+                            
+                            local numOwned = tonumber(owned)
+                            
+                            if not numOwned then
+                                
+                                numOwned = 0
+                                
+                            end
+                            
+                            local numLimit = tonumber(limit)
+                            
+                            if not numLimit then
+                                
+                                numLimit = 0
+                                
+                            end
+                            
+                            local numLeft = 999
+                            local isComplete = false
+                            
+                            local checkFull = string.find(availText, "full", 1, true)
+                            local checkOneOne = string.find(availText, "1/1", 1, true)
+                            
+                            if checkFull or checkOneOne then
+                                
+                                isComplete = true
+                                numLeft = 0
+                                
+                            else
+                                
+                                if avail then
+                                    
+                                    numLeft = tonumber(avail)
+                                    
+                                    if numLeft <= 0 then
+                                        
+                                        isComplete = true
+                                        
+                                    end
+                                    
+                                else
+                                    
+                                    if numLimit > 0 then
+                                        
+                                        numLeft = numLimit - numOwned
+                                        
+                                        if numLeft <= 0 then
+                                            
+                                            isComplete = true
+                                            
+                                        end
+                                        
+                                    end
+                                    
+                                end
+                                
+                            end
+                            
+                            if numLeft < 0 then
+                                
+                                numLeft = 0
+                                
+                            end
+                            
+                            if isComplete == true then
+                                
+                                if STATE.TargetEgg_Done == false then
+                                    
+                                    STATE.TargetEgg_Done = true
+                                    
+                                    if CONFIG.DEBUG_MODE == true then
+                                        
+                                        print("[SCANNER] ✅ สำเร็จ! ได้รับไข่เป้าหมายเรียบร้อยแล้ว: " .. eggName)
+                                        
+                                    end
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                        
+                    end
+                    
+                end
+                
+                scanIndex = scanIndex + 1
+                
+            end
+            
+        end
+    )
+    
+end
+
+-- =====================================================================
+-- 🟢 THREAD 1: ANTI-AFK (SIMPLE VIM MODE)
+-- =====================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SimpleVIM_UI"
+
+if PlayerGui then
+    
+    ScreenGui.Parent = PlayerGui
+    
+end
+
+local GreenDot = Instance.new("Frame")
+GreenDot.Size = UDim2.new(0, 10, 0, 10)
+GreenDot.Position = UDim2.new(0, 30, 1, -30)
+GreenDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+GreenDot.BorderSizePixel = 0
+GreenDot.ZIndex = 999
+GreenDot.Parent = ScreenGui
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Thickness = 2
+UIStroke.Color = Color3.fromRGB(0, 0, 0)
+UIStroke.Parent = GreenDot
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = GreenDot
+
+task.spawn(
+    function()
+        
+        while true do
+            
+            local WaitTime = math.random(30, 80)
+            
+            task.wait(WaitTime)
+            
+            VirtualUser:CaptureController()
+            
+            local RandomX = math.random(1, 50)
+            local RandomY = math.random(1, 50)
+            local TargetVector = Vector2.new(RandomX, RandomY)
+            
+            VirtualUser:ClickButton2(TargetVector)
+            
+            print("[AFK] ป้องกัน AFK สำเร็จ! รออีก: " .. tostring(WaitTime) .. " วินาที")
+            
+        end
+        
+    end
+)
+
+-- =====================================================================
+-- 🥚 THREAD 2: SILENT FAST EGG COLLECTOR
+-- =====================================================================
+
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local CollectRemote = RemoteEvents:WaitForChild("CollectCollectable")
+
+task.spawn(
+    function()
+        
+        local function TryCollect(TargetObject)
+            
+            local ObjectID = TargetObject:GetAttribute("ID")
+            
+            if ObjectID then
+                
+                if type(ObjectID) == "number" then
+                    
+                    pcall(
+                        function()
+                            
+                            CollectRemote:FireServer(ObjectID)
+                            
+                        end
+                    )
+                    
+                    return true
+                    
+                end
+                
+            end
+            
+            return false
+            
+        end
+        
+        WorkspaceService.DescendantAdded:Connect(
+            function(AddedObject)
+                
+                local CollectResult = TryCollect(AddedObject)
+                
+                if CollectResult == true then
+                    
+                    return
+                    
+                end
+                
+                local IDConnection = nil
+                
+                IDConnection = AddedObject:GetAttributeChangedSignal("ID"):Connect(
+                    function()
+                        
+                        TryCollect(AddedObject)
+                        
+                        if IDConnection then
+                            
+                            IDConnection:Disconnect()
+                            
+                        end
+                        
+                    end
+                )
+                
+                task.delay(
+                    2, 
+                    function()
+                        
+                        if IDConnection then
+                            
+                            IDConnection:Disconnect()
+                            
+                        end
+                        
+                    end
+                )
+                
+            end
+        )
+        
+        while true do
+            
+            local AllWorkspaceDescendants = WorkspaceService:GetDescendants()
+            local LoopIndex = 1
+            
+            while LoopIndex <= #AllWorkspaceDescendants do
+                
+                local CurrentDescendant = AllWorkspaceDescendants[LoopIndex]
+                local DescendantID = CurrentDescendant:GetAttribute("ID")
+                
+                if DescendantID then
+                    
+                    pcall(
+                        function()
+                            
+                            CollectRemote:FireServer(DescendantID)
+                            
+                        end
+                    )
+                    
+                end
+                
+                LoopIndex = LoopIndex + 1
+                
+            end
+            
+            task.wait(3)
+            
+        end
+        
+    end
+)
+
+-- =====================================================================
+-- ⚙️ THREAD 3: HORST SPACE LAUNCHER
+-- =====================================================================
+
+task.spawn(
+    function()
+        
+        while true do
+            
+            pcall(
+                function()
+                    
+                    if not getgenv().HorstRunning then
+                        
+                        getgenv().HorstConfig = { 
+                            
+                            ["EnableLog"] = false, 
+                            
+                            ["Whitescreen"] = false, 
+                            
+                            ["EnableAddFriends"] = false, 
+                            
+                            ["LockFps"] = { 
+                                
+                                ["EnableLockFps"] = false, 
+                                
+                                ["LockFpsAmount"] = 30 
+                                
+                            } 
+                            
+                        }
+                        
+                        local LoaderURL = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+                        local FetchedLoader = game:HttpGet(LoaderURL)
+                        
+                        loadstring(FetchedLoader)()
+                        
+                        getgenv().HorstRunning = true
+                        
+                    end
+                    
+                end
+            )
+            
+            task.wait(30)
+            
+        end
+        
+    end
+)
+
+-- =====================================================================
+-- 🔍 THREAD 4: BACKGROUND UI MONITOR
+-- =====================================================================
+
+task.spawn(
+    function()
+        
+        while true do
+            
+            RefreshAndCheckUI()
+            
+            task.wait(5)
+            
+        end
+        
+    end
+)
+
+-- =====================================================================
+-- 🎯 THREAD 5: SNIPER BEGGAR QUEST (ฟาร์มอย่างเดียว ไม่ยิง Log)
+-- =====================================================================
+
+task.spawn(
+    function()
+        
+        print("[SYSTEM] 🛑 กำลังตรวจสอบสถานะไข่ก่อนเริ่มการฟาร์ม (PRE-CHECK)...")
+        
+        RefreshAndCheckUI()
+        
+        if STATE.TargetEgg_Done == true then
+            
+            print("[QUEST] 🎉 เควสนี้สำเร็จแล้ว! (Quest Completed)")
+            print("[SYSTEM] 🎯 ข้ามการทำงานเควสหลัก! ตรวจพบว่าคุณได้รับไข่เป้าหมายมาก่อนหน้านี้แล้วครับ!")
+            
+            STATE.SniperQuest_String = " , 🥚 สถานะ: 🎉 เควสสำเร็จแล้ว! (มีไข่อยู่แล้วตั้งแต่เข้าเกม)"
+            STATE.SniperQuest_Finished = true
+            
+            return
+            
+        end
+        
+        print("[SYSTEM] 🟢 ตรวจสอบแล้วยังไม่มีไข่เป้าหมาย เริ่มต้นการฟาร์ม 2,000 ครั้ง!")
+        
+        local MaxLoops = 2000
+        local CurrentLoop = 1
+        
+        while CurrentLoop <= MaxLoops do
+            
+            if STATE.TargetEgg_Done == true then
+                
+                print("[QUEST] 🎉 เควสนี้สำเร็จแล้ว! (Quest Completed)")
+                print("[SYSTEM] 🛑 หยุดฟาร์มกลางคัน! ได้รับไข่เป้าหมายระหว่างการฟาร์มแล้ว!")
+                
+                STATE.SniperQuest_String = " , 🥚 สถานะ: 🎉 เควสสำเร็จแล้ว! (ได้รับไข่เป้าหมายระหว่างฟาร์ม)"
+                STATE.SniperQuest_Finished = true
+                
+                break
+                
+            end
+            
+            local ClicksLeft = MaxLoops - CurrentLoop
+            local Character = LocalPlayer.Character
+            
+            if Character then
+                
+                local MyRootPart = Character:FindFirstChild("HumanoidRootPart")
+                
+                if MyRootPart then
+                    
+                    local Map = WorkspaceService:FindFirstChild("Map")
+                    
+                    if Map then
+                        
+                        local BeggarItems = Map:FindFirstChild("BeggarItems")
+                        
+                        if BeggarItems then
+                            
+                            local Beggar = BeggarItems:FindFirstChild("Beggar")
+                            
+                            if Beggar then
+                                
+                                local TargetRootPart = Beggar:FindFirstChild("HumanoidRootPart")
+                                
+                                if TargetRootPart then
+                                    
+                                    MyRootPart.CFrame = TargetRootPart.CFrame
+                                    
+                                    task.wait(0.1)
+                                    
+                                    local InteractFolder = TargetRootPart:FindFirstChild("Interact")
+                                    
+                                    if InteractFolder then
+                                        
+                                        local TargetPrompt = InteractFolder:FindFirstChild("ProximityPrompt")
+                                        
+                                        if TargetPrompt then
+                                            
+                                            if TargetPrompt:IsA("ProximityPrompt") then
+                                                
+                                                pcall(
+                                                    function()
+                                                        
+                                                        fireproximityprompt(TargetPrompt)
+                                                        
+                                                    end
+                                                )
+                                                
+                                            end
+                                            
+                                        end
+                                        
+                                    end
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                        
+                    end
+                    
+                end
+                
+            end
+            
+            STATE.SniperQuest_String = string.format(" , 🥚 ทำ Egg Quest Beggar - เหลืออีก: %d ครั้ง", ClicksLeft)
+            
+            CurrentLoop = CurrentLoop + 1
+            
+            task.wait(0.3)
+            
+        end
+        
+        if STATE.TargetEgg_Done == false then
+            
+            print("[SYSTEM] 🔄 ทำครบ 2,000 ครั้งแล้ว กำลังสแกนตรวจสอบสถานะไข่เป็นครั้งสุดท้าย (POST-CHECK)...")
+            
+            RefreshAndCheckUI()
+            
+            if STATE.TargetEgg_Done == false then
+                
+                warn("[FAILED] ❌ สิ้นสุดการฟาร์ม 2,000 ครั้ง แต่ตรวจสอบแล้ว ยังไม่ได้รับไข่เป้าหมาย เลยครับ!")
+                STATE.SniperQuest_String = " , 🥚 สถานะ: ❌ ฟาร์มครบ 2,000 ครั้งแล้ว แต่ยังไม่ได้ไข่"
+                
+            else
+                
+                print("[QUEST] 🎉 เควสนี้สำเร็จแล้ว! (Quest Completed)")
+                print("[SYSTEM] ✅ โชคดีมาก! ตรวจพบว่าได้รับไข่ในรอบสุดท้ายพอดีครับ!")
+                STATE.SniperQuest_String = " , 🥚 สถานะ: 🎉 เควสสำเร็จแล้ว! (ได้รับไข่เป้าหมายในรอบสุดท้าย)"
+                
+            end
+            
+        end
+        
+        STATE.SniperQuest_Finished = true
+        print("[SUCCESS] การทำงานของเควสหลักเสร็จสิ้นแล้ว!")
+        
+    end
+)
+
+-- =====================================================================
+-- 📦 THREAD 6: DUAL BOX OPENER QUEST (ฟาร์ม 2 กล่องอย่างเดียว ไม่ยิง Log)
+-- =====================================================================
+
+task.spawn(
+    function()
+        
+        local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
+        local RemoteEvents_Box = ReplicatedStorage:WaitForChild("RemoteEvents")
+        
+        local BuyFunction = RemoteFunctions:WaitForChild("BuyUnitBox")
+        local BanEvent = RemoteEvents_Box:WaitForChild("BanFromUnitBox")
+        
+        local BOX_DATA = {
+            
+            ["Mushroom Egg"] = {
+                
+                Id = "ub_mushroom",
+                
+                Banned = {
+                    
+                    "unit_grenade_lobber",
+                    "unit_range_booster",
+                    "unit_scent_flower",
+                    "unit_drill_head",
+                    "unit_pine",
+                    "unit_pea_lobber"
+                    
+                }
+                
+            },
+            
+            ["bee"] = {
+                
+                Id = "ub_bee",
+                
+                Banned = {
+                    
+                    "unit_banana",
+                    "unit_worker",
+                    "unit_fruit_lobber",
+                    "unit_venus_floortrap",
+                    "unit_aloe_vera",
+                    "unit_pomegranate"
+                    
+                }
+                
+            }
+            
+        }
+        
+        local TargetBoxesList = { "Mushroom Egg", "bee" }
+        local BoxListIndex = 1
+        
+        while BoxListIndex <= #TargetBoxesList do
+            
+            local SelectedBox = TargetBoxesList[BoxListIndex]
+            local CurrentBoxData = BOX_DATA[SelectedBox]
+            
+            if CurrentBoxData then
+                
+                print("[BOX] 📦 เริ่มต้นกระบวนการสุ่มกล่องที่ " .. tostring(BoxListIndex) .. ": " .. SelectedBox)
+                STATE.BoxQuest_String = " , 📦 สุ่มกล่อง " .. SelectedBox .. ": กำลังแบนเกลือ..."
+                
+                local BannedList = CurrentBoxData.Banned
+                local BoxID = CurrentBoxData.Id
+                local BanIndex = 1
+                
+                while BanIndex <= #BannedList do
+                    
+                    local UnitToBan = BannedList[BanIndex]
+                    
+                    pcall(
+                        function()
+                            
+                            BanEvent:FireServer(BoxID, UnitToBan, true)
+                            
+                        end
+                    )
+                    
+                    BanIndex = BanIndex + 1
+                    
+                end
+                
+                task.wait(1)
+                
+                print("[BOX] 🚀 เริ่มต้นการสุ่มกล่อง " .. SelectedBox .. " จำนวน 10 รอบ...")
+                
+                local MaxSummonLoops = 10
+                local SummonAmountPerLoop = 10
+                local CurrentSummonLoop = 1
+                
+                while CurrentSummonLoop <= MaxSummonLoops do
+                    
+                    STATE.BoxQuest_String = string.format(" , 📦 สุ่มกล่อง %s: %d/10", SelectedBox, CurrentSummonLoop)
+                    
+                    pcall(
+                        function()
+                            
+                            BuyFunction:InvokeServer(BoxID, SummonAmountPerLoop)
+                            
+                        end
+                    )
+                    
+                    CurrentSummonLoop = CurrentSummonLoop + 1
+                    
+                    task.wait(1)
+                    
+                end
+                
+            end
+            
+            BoxListIndex = BoxListIndex + 1
+            
+        end
+        
+        print("[BOX] ✅ เควสสุ่มกล่องทั้งหมดเสร็จสมบูรณ์แล้ว!")
+        STATE.BoxQuest_String = " , 📦 เควสสุ่มกล่อง: ✅ สุ่ม Mushroom และ Bee เสร็จสิ้น!"
+        
+        STATE.BoxQuest_Finished = true
+        
+    end
+)
+
+-- =====================================================================
+-- 📡 THREAD 7: CENTRAL HORST SYNC (ผู้คุมกฎการยิง Log แต่เพียงผู้เดียว)
+-- =====================================================================
+
+local LAST_HORST_MSG = ""
+
+local function ForceUpdateHorst()
+    
+    pcall(
+        function()
+            
+            if _G.Horst_SetDescription then
+                
+                local HasRaff = false
+                
+                pcall(
+                    function()
+                        
+                        if HasRafflesia then
+                            
+                            HasRaff = HasRafflesia()
+                            
+                        end
+                        
+                    end
+                )
+                
+                local RaffString = "False"
+                
+                if HasRaff == true then
+                    
+                    RaffString = "True"
+                    
+                end
+                
+                local SafeSeedText = "0"
+                
+                if cachedSeedsText ~= nil then
+                    
+                    SafeSeedText = cachedSeedsText
+                    
+                end
+                
+                local SafeEggText = "0"
+                
+                if cachedEggsText ~= nil then
+                    
+                    SafeEggText = cachedEggsText
+                    
+                end
+                
+                local BaseStats = string.format("🌱 %s , 🥚 %s , 🌸 Raff: %s", SafeSeedText, SafeEggText, RaffString)
+                local FinalDescription = BaseStats .. STATE.SniperQuest_String .. STATE.BoxQuest_String
+                
+                local JsonData = {
+                    
+                    Quest = FinalDescription
+                    
+                }
+                
+                local EncodedJson = HttpService:JSONEncode(JsonData)
+                
+                if FinalDescription ~= LAST_HORST_MSG then
+                    
+                    LAST_HORST_MSG = FinalDescription
+                    
+                    _G.Horst_SetDescription(FinalDescription, EncodedJson)
+                    
+                end
+                
+            end
+            
+        end
+    )
+    
+end
+
+task.spawn(
+    function()
+        
+        print("[LOG_SYNC] ⏳ กำลังรอให้ระบบ Horst โหลดข้อมูล...")
+        
+        while _G.Horst_SetDescription == nil do
+            
+            task.wait(1)
+            
+        end
+        
+        print("[LOG_SYNC] ✅ ระบบ Horst โหลดเสร็จสมบูรณ์ พร้อมเชื่อมต่อแล้ว!")
+        
+        -- วนลูปส่ง Log ทุกๆ 1 วินาที จนกว่า "ทั้งสองเควส" จะเสร็จสิ้นสมบูรณ์
+        while true do
+            
+            -- 🚨 บังคับดักรอเงิน UI โหลดให้เสร็จก่อนเสมอ (ห้ามส่งค่า 0 ไปหาม้าเด็ดขาด)
+            EnsureCurrenciesLoaded()
+            
+            ForceUpdateHorst()
+            
+            -- 🚨 เช็คว่าทั้งเควส Sniper และ เควส Box เสร็จสิ้นครบถ้วนแล้วหรือยัง?
+            if STATE.SniperQuest_Finished == true then
+                
+                if STATE.BoxQuest_Finished == true then
+                    
+                    print("[LOG_SYNC] 🎯 ทุกเควสเสร็จสมบูรณ์แล้ว! กำลังส่ง Log สรุปรอบสุดท้าย...")
+                    
+                    -- บังคับล้าง Cache ให้ม้าอัปเดตแบบ 100% ไม่มีการข้าม
+                    LAST_HORST_MSG = ""
+                    ForceUpdateHorst()
+                    
+                    print("[LOG_SYNC] ⏳ หน่วงเวลา 8 วินาที เพื่อให้ม้ารับข้อมูลครบ 100%...")
+                    
+                    local waitIndex = 8
+                    
+                    while waitIndex > 0 do
+                        
+                        print("... " .. tostring(waitIndex))
+                        task.wait(1)
+                        waitIndex = waitIndex - 1
+                        
+                    end
+                    
+                    print("[LOG_SYNC] 🛑 การส่ง Log เสร็จสมบูรณ์! กำลังปลดล็อกให้สคริปต์หลักปิดตัวลง...")
+                    
+                    -- 🚨 ปลดล็อกแม่กุญแจให้สคริปต์หลัก (บรรทัดล่างสุด) ปิดตัวลงได้อย่างปลอดภัย!
+                    STATE.Master_Sync_Completed = true
+                    
+                    break
+                    
+                end
+                
+            end
+            
+            task.wait(1)
+            
+        end
+        
+    end
+)
+
+-- =====================================================================
+-- 🛑 MASTER THREAD LOCK (ล็อกไม่ให้สคริปต์ Executor ตัดจบกลางคัน)
+-- =====================================================================
+
+print("[SYSTEM] ⏳ สคริปต์หลักกำลังล็อกตัวเองเพื่อรอให้ทุก Thread ทำงานและส่ง Log ให้เสร็จสิ้น...")
+
+-- ลูปรอจนกว่า Thread 7 จะปลดล็อกตัวแปรนี้
+while STATE.Master_Sync_Completed == false do
+    
+    task.wait(1)
+    
+end
+
+print("[SYSTEM] ✅✅✅ ทุกอย่างเสร็จสิ้นสมบูรณ์ สคริปต์หลักปิดการทำงานได้อย่างปลอดภัย! ✅✅✅")
+
+-- =====================================================================
+-- 🔥 ส่วนที่ปรับแก้ตามคำสั่ง: ส่งสัญญาณกลับให้ Master Script ว่า Phase 2 จบแล้ว
+-- =====================================================================
+print("[SYSTEM] 🟢 สคริปต์ที่ 2 (Dual Box Bot) ทำงานเสร็จสิ้นสมบูรณ์แล้ว!")
+
+getgenv().Phase2_DualBoxBot_Finished = true
