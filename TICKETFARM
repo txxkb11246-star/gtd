@@ -1,0 +1,447 @@
+-- =====================================================================
+-- [[ Roblox Ticket Farming: All-in-One Thread ]]
+-- (Anti-AFK + Auto Hop + Horst Sync & Account Switch)
+-- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
+-- =====================================================================
+
+-- =====================================================================
+-- ⚙️ 1. HORST INITIALIZATION (รันระบบแกนกลางทันทีเมื่อเกมโหลดเสร็จ)
+-- =====================================================================
+
+repeat
+    task.wait()
+until game:IsLoaded()
+
+getgenv().HorstConfig = 
+{
+    ["EnableLog"] = false,
+    ["Whitescreen"] = false,
+    ["EnableAddFriends"] = false,
+    ["LockFps"] = 
+    {
+        ["EnableLockFps"] = false,
+        ["LockFpsAmount"] = 30
+    }
+}
+
+-- [ แตกคำสั่งโหลด Horst เพื่อหลีกเลี่ยงการรวมบรรทัด (Full-Scale Rule) ]
+local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+local horstHttpGet = game:HttpGet(horstUrl)
+local horstLoadString = loadstring(horstHttpGet)
+horstLoadString()
+
+-- =====================================================================
+-- ⚙️ 2. MAIN CONFIGURATIONS (ตั้งค่าหลักทั้งหมดอยู่ที่นี่)
+-- =====================================================================
+
+local AccountSwitchConfig = 
+{
+    TargetTickets = 200000 -- จำนวนตั๋วที่ต้องการเพื่อเปลี่ยนไอดี
+}
+
+local LogDisplayConfig = 
+{
+    ["ShowSeeds"] = true,
+    ["ShowTickets"] = true,
+    ["ShowEggs"] = true,
+    ["ShowRafflesia"] = true
+}
+
+local HopConfig = 
+{
+    HopMode = "PlaceID",
+    TargetPlaceId = game.PlaceId,
+    MaxPlayersTarget = 2,
+    ApiLimit = 100
+}
+
+-- =====================================================================
+-- 🛠️ 3. SERVICES & VARIABLES
+-- =====================================================================
+
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+
+while not Players.LocalPlayer do
+    task.wait(1)
+end
+
+local LocalPlayer = Players.LocalPlayer
+
+-- =====================================================================
+-- 🟢 4. UI SETUP: SIMPLE VIM MODE (GREEN DOT)
+-- =====================================================================
+
+while not LocalPlayer:FindFirstChild("PlayerGui") do
+    task.wait(1)
+end
+
+local sg = Instance.new("ScreenGui")
+sg.Name = "SimpleVIM_UI"
+sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 10, 0, 10)
+dot.Position = UDim2.new(0, 30, 1, -30)
+dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+dot.BorderSizePixel = 0
+dot.ZIndex = 999
+dot.Parent = sg
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(0, 0, 0)
+stroke.Parent = dot
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = dot
+
+-- =====================================================================
+-- 🔄 5. SERVER HOP FUNCTIONS
+-- =====================================================================
+
+local function FetchLowPopulationServers(placeId)
+    local apiUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=" .. tostring(HopConfig.ApiLimit)
+    
+    local success, response = pcall(
+        function()
+            return request(
+                {
+                    Url = apiUrl,
+                    Method = "GET"
+                }
+            )
+        end
+    )
+
+    if success then
+        if response then
+            if response.Body then
+                local decodeSuccess, decodedData = pcall(
+                    function()
+                        return HttpService:JSONDecode(response.Body)
+                    end
+                )
+                
+                if decodeSuccess then
+                    if decodedData then
+                        if decodedData.data then
+                            return decodedData.data
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    warn("ไม่สามารถดึงข้อมูลเซิร์ฟเวอร์จาก API ได้")
+    return nil
+end
+
+local function FindValidServerInstance(serverList)
+    if not serverList then
+        return nil
+    end
+
+    for index, serverData in ipairs(serverList) do
+        local isNotCurrentServer = (serverData.id ~= game.JobId)
+        local hasLowPlayers = (serverData.playing <= HopConfig.MaxPlayersTarget)
+        local isNotFull = (serverData.playing < serverData.maxPlayers)
+        local isPingValid = (serverData.ping ~= nil)
+
+        if isNotCurrentServer then
+            if hasLowPlayers then
+                if isNotFull then
+                    if isPingValid then
+                        return serverData.id
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function ExecuteServerHop()
+    print("กำลังเริ่มกระบวนการค้นหาเซิร์ฟเวอร์คนน้อย สำหรับ Place ID: " .. tostring(HopConfig.TargetPlaceId))
+    
+    local serverList = FetchLowPopulationServers(HopConfig.TargetPlaceId)
+    local targetJobId = FindValidServerInstance(serverList)
+
+    if targetJobId then
+        print("พบเซิร์ฟเวอร์ที่เหมาะสมแล้ว! Target Job ID: " .. tostring(targetJobId))
+        print("กำลังทำการย้ายเซิร์ฟเวอร์ (Teleporting)...")
+        
+        local teleportSuccess, teleportError = pcall(
+            function()
+                TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetJobId, LocalPlayer)
+            end
+        )
+
+        if not teleportSuccess then
+            warn("การเทเลพอร์ตล้มเหลว: " .. tostring(teleportError))
+        end
+    else
+        warn("ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไข ลองปรับ MaxPlayersTarget หรือรอสักครู่")
+    end
+end
+
+-- =====================================================================
+-- 🎒 6. INVENTORY & RAFFLESIA CHECKER
+-- =====================================================================
+
+local InventoryTableCache = nil
+
+local function UpdateInventoryCache()
+    local gc = getgc(true)
+    
+    for i = 1, #gc do
+        local obj = gc[i]
+        
+        if type(obj) == "table" then
+            pcall(
+                function()
+                    for uid, data in pairs(obj) do
+                        if type(uid) == "string" then
+                            if string.find(uid, "unique_", 1, true) then
+                                if data.ItemData then
+                                    if data.ItemData.ID then
+                                        InventoryTableCache = obj
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            )
+            
+            if InventoryTableCache then
+                break
+            end
+        end
+    end
+end
+
+local function HasRafflesia()
+    if not InventoryTableCache then
+        UpdateInventoryCache()
+    end
+    
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_", 1, true) then
+                    if data.ItemData then
+                        if data.ItemData.ID then
+                            if data.ItemData.ID == "unit_rafflesia" then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- =====================================================================
+-- 💰 7. PLAYER DATA CACHE (MEMORY)
+-- =====================================================================
+
+local PlayerDataCache = nil
+
+local cachedSeedsText = "0"
+local cachedTicketsText = "0"
+local cachedEggsText = "0"
+
+local function UpdatePlayerDataCache()
+    local gc = getgc(true)
+    
+    for i = 1, #gc do
+        local obj = gc[i]
+        
+        if type(obj) == "table" then
+            pcall(
+                function()
+                    if obj.Seeds then
+                        if obj.Tickets then
+                            PlayerDataCache = obj
+                        end
+                    end
+                end
+            )
+            
+            if PlayerDataCache then
+                break
+            end
+        end
+    end
+end
+
+local function UpdateCurrenciesFromMemory()
+    pcall(
+        function()
+            if not PlayerDataCache then
+                UpdatePlayerDataCache()
+            end
+            
+            if PlayerDataCache then
+                
+                if PlayerDataCache.Seeds then
+                    cachedSeedsText = tostring(PlayerDataCache.Seeds)
+                end
+                
+                if PlayerDataCache.Tickets then
+                    cachedTicketsText = tostring(PlayerDataCache.Tickets)
+                end
+                
+                if PlayerDataCache.EasterEggs then
+                    cachedEggsText = tostring(PlayerDataCache.EasterEggs)
+                end
+                
+            end
+        end
+    )
+end
+
+-- =====================================================================
+-- 🚀 8. MAIN THREADS EXECUTION
+-- =====================================================================
+
+-- [ Thread 1: Virtual Input Mouse (Anti-AFK) ]
+task.spawn(
+    function()
+        while true do
+            local waitTime = math.random(30, 80)
+            task.wait(waitTime)
+
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
+            
+            print("VIM: Virtual Right-Click executed. Next in: " .. waitTime .. "s")
+        end
+    end
+)
+
+-- [ Thread 2: Player Count Monitor & Auto Hop ]
+task.spawn(
+    function()
+        while true do
+            task.wait(5)
+            
+            local currentPlayerCount = #Players:GetPlayers()
+            
+            if currentPlayerCount > 2 then
+                print("ตรวจพบผู้เล่นเกิน 2 คน กำลังเริ่มต้นระบบ Hop...")
+                
+                if HopConfig.HopMode == "PlaceID" then
+                    ExecuteServerHop()
+                else
+                    if HopConfig.HopMode == "Lobby" then
+                        print("ระบบ Hop กลับ Lobby ยังไม่ได้ถูกตั้งค่าการทำงาน")
+                    else
+                        warn("ตั้งค่า HopMode ไม่ถูกต้อง")
+                    end
+                end
+                
+                task.wait(15)
+            end
+        end
+    end
+)
+
+-- [ Thread 3: Horst Direct Sync & Account Switcher ]
+local LAST_HORST_MSG = ""
+
+task.spawn(
+    function()
+        while true do
+            pcall(
+                function()
+                    UpdateCurrenciesFromMemory()
+                    
+                    -- [ ระบบตรวจสอบการเปลี่ยนไอดี (Account Switch Check) ]
+                    if _G.Horst_AccountChangeDone then
+                        local currentTicketsValue = tonumber(cachedTicketsText)
+                        
+                        if currentTicketsValue then
+                            if currentTicketsValue >= AccountSwitchConfig.TargetTickets then
+                                print("Tickets ถึงเป้าหมาย (" .. tostring(AccountSwitchConfig.TargetTickets) .. ")! กำลังส่งสัญญาณเปลี่ยนไอดี...")
+                                
+                                local successChange, errChange = pcall(
+                                    function()
+                                        return _G.Horst_AccountChangeDone()
+                                    end
+                                )
+                                
+                                if successChange then
+                                    print("Account change done sent successfully!")
+                                else
+                                    print("Failed to send DONE: ", tostring(errChange))
+                                end
+                            end
+                        end
+                    end
+                    
+                    -- [ ระบบส่ง Log ไปยัง Horst ]
+                    if _G.Horst_SetDescription then
+                        
+                        local hasRaff = HasRafflesia()
+                        local raffStr = "False"
+                        
+                        if hasRaff then
+                            raffStr = "True"
+                        end
+                        
+                        local logParts = 
+                        {
+                        }
+                        
+                        if LogDisplayConfig.ShowSeeds then
+                            local str = string.format("🌱 %s", cachedSeedsText)
+                            table.insert(logParts, str)
+                        end
+                        
+                        if LogDisplayConfig.ShowTickets then
+                            local str = string.format("🎟️ %s", cachedTicketsText)
+                            table.insert(logParts, str)
+                        end
+                        
+                        if LogDisplayConfig.ShowEggs then
+                            local str = string.format("🥚 %s", cachedEggsText)
+                            table.insert(logParts, str)
+                        end
+                        
+                        if LogDisplayConfig.ShowRafflesia then
+                            local str = string.format("🌸 Raff: %s", raffStr)
+                            table.insert(logParts, str)
+                        end
+                        
+                        local desc = table.concat(logParts, " , ")
+                        
+                        local json_data = 
+                        {
+                            ["Quest"] = desc
+                        }
+                        
+                        local encode_json = HttpService:JSONEncode(json_data)
+                        
+                        if desc ~= LAST_HORST_MSG then
+                            LAST_HORST_MSG = desc
+                            _G.Horst_SetDescription(desc, encode_json)
+                        end
+                        
+                    end
+                end
+            )
+            
+            task.wait(10)
+        end
+    end
+)
