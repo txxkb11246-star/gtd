@@ -24,7 +24,6 @@ getgenv().HorstConfig =
     }
 }
 
--- [ แตกคำสั่งโหลด Horst เพื่อหลีกเลี่ยงการรวมบรรทัด (Full-Scale Rule) ]
 local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
 local horstHttpGet = game:HttpGet(horstUrl)
 local horstLoadString = loadstring(horstHttpGet)
@@ -51,7 +50,7 @@ local HopConfig =
 {
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
-    MaxPlayersTarget = 4,
+    MaxPlayersTarget = 4, -- [อัปเดต] เปลี่ยนเป็น 4 คนตามที่คุณต้องการ
     ApiLimit = 100
 }
 
@@ -251,7 +250,7 @@ local function HasRafflesia()
 end
 
 -- =====================================================================
--- 💰 7. PLAYER DATA CACHE (MEMORY)
+-- 💰 7. PLAYER DATA CACHE (MEMORY) WITH TYPE CHECKING
 -- =====================================================================
 
 local PlayerDataCache = nil
@@ -269,9 +268,14 @@ local function UpdatePlayerDataCache()
         if type(obj) == "table" then
             pcall(
                 function()
+                    -- [อัปเดต] ค้นหา Table และตรวจเช็ค Type ว่าเป็นตัวเลขเท่านั้น
                     if obj.Seeds then
-                        if obj.Tickets then
-                            PlayerDataCache = obj
+                        if type(obj.Seeds) == "number" then
+                            if obj.Tickets then
+                                if type(obj.Tickets) == "number" then
+                                    PlayerDataCache = obj
+                                end
+                            end
                         end
                     end
                 end
@@ -337,8 +341,9 @@ task.spawn(
             
             local currentPlayerCount = #Players:GetPlayers()
             
-            if currentPlayerCount > 2 then
-                print("ตรวจพบผู้เล่นเกิน 2 คน กำลังเริ่มต้นระบบ Hop...")
+            -- อิงตาม Config ที่คุณตั้งค่าไว้ (> 4)
+            if currentPlayerCount > HopConfig.MaxPlayersTarget then
+                print("ตรวจพบผู้เล่นเกิน " .. tostring(HopConfig.MaxPlayersTarget) .. " คน กำลังเริ่มต้นระบบ Hop...")
                 
                 if HopConfig.HopMode == "PlaceID" then
                     ExecuteServerHop()
