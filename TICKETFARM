@@ -51,7 +51,7 @@ local HopConfig =
 {
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
-    MaxPlayersTarget = 2,
+    MaxPlayersTarget = 4,
     ApiLimit = 100
 }
 
