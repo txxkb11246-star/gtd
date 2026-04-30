@@ -1,49 +1,22 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Absolute Smallest Hop & Ticket-Delta ]]
--- (Anti-AFK + Absolute Smallest Server Hop + Ticket Change Detect)
+-- [[ Roblox Ticket Farming: Smart Delta & Absolute Smallest Hop ]]
+-- (Anti-AFK + Smart Player Limit Logic + Debug Toggle)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
 -- =====================================================================
--- ⚙️ 1. INITIALIZATION & DEBUG START
+-- ⚙️ 1. MAIN CONFIGURATIONS & DEBUG FUNCTION
 -- =====================================================================
 
-print("[DEBUG]: สคริปต์เริ่มทำงาน...")
-
-repeat
-    task.wait()
-until game:IsLoaded()
-
-print("[DEBUG]: 1. เกมโหลดเสร็จสมบูรณ์ (game:IsLoaded)")
-
--- =====================================================================
--- ⚙️ 2. HORST SYSTEM (รันระบบแกนกลาง)
--- =====================================================================
-
-getgenv().HorstConfig = 
+local HopConfig = 
 {
-    ["EnableLog"] = false,
-    ["Whitescreen"] = false,
-    ["EnableAddFriends"] = false,
-    ["LockFps"] = 
-    {
-        ["EnableLockFps"] = false,
-        ["LockFpsAmount"] = 30
-    }
+    HopMode = "PlaceID",
+    TargetPlaceId = game.PlaceId,
+    MaxPagesToScan = 15,
+    PlayersToTriggerHop = 7, -- ถ้าคนในห้องปัจจุบัน >= 7 ถึงจะเริ่มเปลี่ยนห้อง
+    EnableDebug = true,      -- เปิด(true) / ปิด(false) ข้อความ Debug ใน Console
+    ApiLimit = 100
 }
-
-print("[DEBUG]: 2. เริ่มโหลดระบบ Horst...")
-
-local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
-local horstHttpGet = game:HttpGet(horstUrl)
-local horstLoadString = loadstring(horstHttpGet)
-horstLoadString()
-
-print("[DEBUG]: 3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
-
--- =====================================================================
--- ⚙️ 3. MAIN CONFIGURATIONS
--- =====================================================================
 
 local AccountSwitchConfig = 
 {
@@ -58,14 +31,48 @@ local LogDisplayConfig =
     ["ShowRafflesia"] = true
 }
 
-local HopConfig = 
+local function DebugPrint(message)
+    if HopConfig.EnableDebug then
+        print("[DEBUG]: " .. tostring(message))
+    end
+end
+
+-- =====================================================================
+-- ⚙️ 2. INITIALIZATION START
+-- =====================================================================
+
+DebugPrint("สคริปต์เริ่มทำงาน...")
+
+repeat
+    task.wait()
+until game:IsLoaded()
+
+DebugPrint("1. เกมโหลดเสร็จสมบูรณ์ (game:IsLoaded)")
+
+-- =====================================================================
+-- ⚙️ 3. HORST SYSTEM (รันระบบแกนกลาง)
+-- =====================================================================
+
+getgenv().HorstConfig = 
 {
-    HopMode = "PlaceID",
-    TargetPlaceId = game.PlaceId,
-    MaxPagesToScan = 15,
-    MaxPlayersTarget = 6,    -- เงื่อนไข: ถ้าห้องที่น้อยที่สุดยังเกิน 6 คน จะไม่วาป
-    ApiLimit = 100
+    ["EnableLog"] = false,
+    ["Whitescreen"] = false,
+    ["EnableAddFriends"] = false,
+    ["LockFps"] = 
+    {
+        ["EnableLockFps"] = false,
+        ["LockFpsAmount"] = 30
+    }
 }
+
+DebugPrint("2. เริ่มโหลดระบบ Horst...")
+
+local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
+local horstHttpGet = game:HttpGet(horstUrl)
+local horstLoadString = loadstring(horstHttpGet)
+horstLoadString()
+
+DebugPrint("3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
 
 -- =====================================================================
 -- 🛠️ 4. SERVICES & GLOBAL VARIABLES
@@ -85,9 +92,8 @@ local LocalPlayer = Players.LocalPlayer
 -- ตัวแปรสำหรับระบบ Check Ticket Change
 local InitialTicketValue = nil
 local CurrentTicketInMem = 0
-local IsFarmDone = false
 
-print("[DEBUG]: 4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
+DebugPrint("4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
 -- 🎒 5. MEMORY DATA SYSTEM (ดึงค่าจากตัวเกมโดยตรง)
@@ -137,7 +143,6 @@ end
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
-    -- ใช้ sortOrder=Desc เพื่อให้ API ส่งห้องที่คนน้อยที่สุดมาในหน้าแรกๆ
     local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
     
     if cursor then
@@ -176,7 +181,10 @@ local function FindAbsoluteSmallestServer()
     local currentCursor = ""
     local pagesCompleted = 0
     
-    print("[DEBUG]: 7. เริ่มค้นหาห้องที่ว่างที่สุด (Absolute Deep Scan)...")
+    -- คำนวณขีดจำกัดคนในห้องใหม่ (ถ้าตั้ง 7 เราจะหาห้องที่คนไม่เกิน 5)
+    local targetMaxPlayersForHop = HopConfig.PlayersToTriggerHop - 2
+    
+    DebugPrint("7. เริ่มค้นหาห้องที่ว่างที่สุด (เป้าหมายสูงสุดต้องไม่เกิน " .. tostring(targetMaxPlayersForHop) .. " คน)...")
 
     while pagesCompleted < HopConfig.MaxPagesToScan do
         pagesCompleted = pagesCompleted + 1
@@ -188,12 +196,11 @@ local function FindAbsoluteSmallestServer()
                 local isJoinable = (server.playing < server.maxPlayers)
                 
                 if isNotMe and isJoinable then
-                    -- เปรียบเทียบหาห้องที่คนน้อยที่สุดจริงๆ
                     if server.playing < lowestCountFound then
                         lowestCountFound = server.playing
                         bestJobId = server.id
                         
-                        -- ถ้าเจอห้องที่ว่างมากๆ (เช่น 1-2 คน) ให้ข้ามการสแกนหน้าที่เหลือแล้ววาปทันที
+                        -- ถ้าเจอห้องที่น้อยมากๆ (1-2 คน) ตัดสินใจเอาเลย
                         if lowestCountFound <= 2 then
                             return bestJobId, lowestCountFound
                         end
@@ -216,11 +223,11 @@ end
 
 local function ExecuteDeepHop()
     local targetId, finalCount = FindAbsoluteSmallestServer()
+    local targetMaxPlayersForHop = HopConfig.PlayersToTriggerHop - 2
 
     if targetId then
-        -- ตรวจสอบเงื่อนไขสุดท้าย: ห้องที่น้อยที่สุดต้องไม่เกิน 6 คน
-        if finalCount <= HopConfig.MaxPlayersTarget then
-            print("[DEBUG]: พบห้องที่ดีที่สุดแล้ว (" .. tostring(finalCount) .. " คน) กำลังย้ายเซิร์ฟเวอร์...")
+        if finalCount <= targetMaxPlayersForHop then
+            DebugPrint("พบห้องที่ดีที่สุดแล้ว (" .. tostring(finalCount) .. " คน) กำลังย้ายเซิร์ฟเวอร์...")
             local success, err = pcall(
                 function()
                     TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
@@ -228,7 +235,7 @@ local function ExecuteDeepHop()
             )
             return success
         else
-            warn("[DEBUG]: ห้องที่ว่างที่สุดขณะนี้มี " .. tostring(finalCount) .. " คน (เกิน 6 คน) จะไม่ทำการวาป...")
+            DebugPrint("ห้องที่ว่างที่สุดขณะนี้มี " .. tostring(finalCount) .. " คน (เกินลิมิต " .. tostring(targetMaxPlayersForHop) .. ") จะไม่ทำการวาป...")
             return false
         end
     end
@@ -250,10 +257,10 @@ task.spawn(
     end
 )
 
--- [ Thread 2: Ticket Detection & Absolute Hop Monitor ]
+-- [ Thread 2: Smart Ticket Detection & Hop Monitor ]
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มระบบตรวจสอบ Ticket Change...")
+        DebugPrint("เริ่มระบบตรวจสอบ Smart Ticket Change...")
         
         repeat
             UpdateCurrenciesFromMemory()
@@ -261,30 +268,35 @@ task.spawn(
         until CurrentTicketInMem > 0
         
         InitialTicketValue = CurrentTicketInMem
-        print("[DEBUG]: บันทึกค่าเริ่มต้นสำเร็จ: " .. tostring(InitialTicketValue))
+        DebugPrint("บันทึกค่า Ticket เริ่มต้นสำเร็จ: " .. tostring(InitialTicketValue))
 
         while true do
             task.wait(5)
             UpdateCurrenciesFromMemory()
             
-            if not IsFarmDone then
-                if CurrentTicketInMem > InitialTicketValue then
-                    IsFarmDone = true
-                    print("[DEBUG]: !!! Ticket เพิ่มขึ้นแล้ว (" .. InitialTicketValue .. " -> " .. CurrentTicketInMem .. ") !!!")
-                end
-            end
-
-            -- เงื่อนไขการย้าย: Ticket เพิ่มแล้ว AND คนในห้องปัจจุบัน > 4 (คนเยอะค่อยย้าย)
-            if IsFarmDone then
+            if CurrentTicketInMem > InitialTicketValue then
                 local currentPlayerCount = #Players:GetPlayers()
-                if currentPlayerCount > 4 then
-                    print("[DEBUG]: ฟาร์มเสร็จ + คนเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องว่างตามเงื่อนไข...")
-                    local teleportDone = ExecuteDeepHop()
+                
+                -- ตรวจสอบจำนวนคน
+                if currentPlayerCount >= HopConfig.PlayersToTriggerHop then
                     
-                    if not teleportDone then
-                        print("[DEBUG]: ไม่พบห้องที่ตรงตามเงื่อนไข (<= 6 คน) หรือวาปล้มเหลว จะลองใหม่ใน 5 วินาที...")
-                        task.wait(5)
+                    DebugPrint("!!! ตั๋วเพิ่ม (" .. InitialTicketValue .. " -> " .. CurrentTicketInMem .. ") + คนในห้องเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องใหม่ !!!")
+                    
+                    local teleportDone = false
+                    while not teleportDone do
+                        teleportDone = ExecuteDeepHop()
+                        if not teleportDone then
+                            DebugPrint("ไม่พบห้องที่ปลอดภัย หรือวาปล้มเหลว ลองหาใหม่ใน 5 วินาที...")
+                            task.wait(5)
+                        end
                     end
+                    
+                else
+                    
+                    -- ถ้าตั๋วเพิ่มแล้ว แต่คนในห้องยังไม่ถึงเกณฑ์ที่ตั้งไว้ (น้อยกว่า 7)
+                    DebugPrint("ตั๋วเพิ่มเป็น " .. CurrentTicketInMem .. " แต่คนในห้องมีแค่ " .. currentPlayerCount .. " คน (ยังไม่ถึง " .. HopConfig.PlayersToTriggerHop .. ") จำค่าใหม่และรอฟาร์มต่อ...")
+                    InitialTicketValue = CurrentTicketInMem
+                    
                 end
             end
         end
@@ -302,7 +314,7 @@ task.spawn(
                     
                     if _G.Horst_AccountChangeDone then
                         if CurrentTicketInMem >= AccountSwitchConfig.TargetTickets then
-                            print("[DEBUG]: ตั๋วครบเป้าหมาย สลับไอดี!")
+                            DebugPrint("ตั๋วครบเป้าหมาย สลับไอดี!")
                             _G.Horst_AccountChangeDone()
                         end
                     end
