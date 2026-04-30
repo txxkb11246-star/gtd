@@ -63,7 +63,7 @@ local HopConfig =
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 15,
-    MaxPlayersTarget = 5,
+    MaxPlayersTarget = 6,
     ApiLimit = 100
 }
 
