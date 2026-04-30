@@ -1,6 +1,6 @@
 -- =====================================================================
 -- [[ Roblox Ticket Farming: Smart Delta & Absolute Smallest Hop ]]
--- (Anti-AFK VIM + Smart Player Limit Logic + Debug Toggle)
+-- (Anti-AFK Green Dot + Smart Player Limit Logic + Debug Toggle)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -38,7 +38,7 @@ local function DebugPrint(message)
 end
 
 -- =====================================================================
--- ⚙️ 2. INITIALIZATION START
+-- ⚙️ 2. INITIALIZATION START (WAIT FOR GAME LOAD)
 -- =====================================================================
 
 DebugPrint("สคริปต์เริ่มทำงาน...")
@@ -50,7 +50,7 @@ until game:IsLoaded()
 DebugPrint("1. เกมโหลดเสร็จสมบูรณ์ (game:IsLoaded)")
 
 -- =====================================================================
--- ⚙️ 3. HORST SYSTEM (รันระบบแกนกลาง)
+-- ⚙️ 3. HORST SYSTEM (รันระบบม้าก่อนเป็นอันดับแรกตามลำดับ)
 -- =====================================================================
 
 getgenv().HorstConfig = 
@@ -65,21 +65,24 @@ getgenv().HorstConfig =
     }
 }
 
-DebugPrint("2. เริ่มโหลดระบบ Horst...")
+DebugPrint("2. กำลังโหลดระบบ Horst (ระบบม้า) เพื่อเช็ค Change ID...")
 
 local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
-local horstHttpGet = game:HttpGet(horstUrl)
-local horstLoadString = loadstring(horstHttpGet)
-horstLoadString()
+local successHorst, horstContent = pcall(function() return game:HttpGet(horstUrl) end)
 
-DebugPrint("3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
+if successHorst then
+    local horstLoadString = loadstring(horstContent)
+    horstLoadString()
+    DebugPrint("3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
+else
+    DebugPrint("⚠️ โหลด Horst ไม่สำเร็จ!")
+end
 
 -- =====================================================================
 -- 🛠️ 4. SERVICES & GLOBAL VARIABLES
 -- =====================================================================
 
 local VirtualUser = game:GetService("VirtualUser")
-local VirtualInputManager = game:GetService("VirtualInputManager") -- เพิ่ม VIM
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
@@ -97,10 +100,52 @@ local CurrentTicketInMem = 0
 DebugPrint("4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
--- 🎒 5. MEMORY DATA SYSTEM (ดึงค่าจากตัวเกมโดยตรง)
+-- 🟢 5. ANTI-AFK SYSTEM (SIMPLE VIM MODE WITH GREEN DOT)
 -- =====================================================================
 
-local InventoryTableCache = nil
+-- [1] สร้าง UI จุดสีเขียวแบบคงที่
+task.spawn(function()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SimpleVIM_UI"
+    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 10, 0, 10) 
+    dot.Position = UDim2.new(0, 30, 1, -30) 
+    dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0) 
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 999
+    dot.Parent = sg
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Parent = dot
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = dot
+    
+    DebugPrint("5. ระบบจุดเขียว Anti-AFK ติดตั้งเรียบร้อย")
+end)
+
+-- [2] ระบบ Virtual Input Mouse (สุ่มคลิกขวา)
+task.spawn(function()
+    while true do
+        local waitTime = math.random(30, 80)
+        task.wait(waitTime)
+
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
+        
+        DebugPrint("VIM: Virtual Right-Click executed. Next in: " .. waitTime .. "s")
+    end
+end)
+
+-- =====================================================================
+-- 🎒 6. MEMORY DATA SYSTEM (ดึงค่าจากตัวเกมโดยตรง)
+-- =====================================================================
+
 local PlayerDataCache = nil
 local cachedSeedsText = "0"
 local cachedTicketsText = "0"
@@ -140,38 +185,26 @@ local function UpdateCurrenciesFromMemory()
 end
 
 -- =====================================================================
--- 🔄 6. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
+-- 🔄 7. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
     local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
     
-    if cursor then
-        if cursor ~= "" then
-            url = url .. "&cursor=" .. tostring(cursor)
-        end
+    if cursor and cursor ~= "" then
+        url = url .. "&cursor=" .. tostring(cursor)
     end
 
-    local success, response = pcall(
-        function()
-            return request(
-                {
-                    Url = url,
-                    Method = "GET"
-                }
-            )
-        end
-    )
+    local success, response = pcall(function()
+        return request({
+            Url = url,
+            Method = "GET"
+        })
+    end)
 
-    if success then
-        if response and response.Body then
-            local decodeSuccess, decoded = pcall(
-                function()
-                    return HttpService:JSONDecode(response.Body)
-                end
-            )
-            if decodeSuccess then return decoded end
-        end
+    if success and response and response.Body then
+        local decodeSuccess, decoded = pcall(function() return HttpService:JSONDecode(response.Body) end)
+        if decodeSuccess then return decoded end
     end
     return nil
 end
@@ -181,34 +214,24 @@ local function FindAbsoluteSmallestServer()
     local lowestCountFound = math.huge
     local currentCursor = ""
     local pagesCompleted = 0
-    
-    -- คำนวณขีดจำกัดคนในห้องใหม่ (ถ้าตั้ง 7 เราจะหาห้องที่คนไม่เกิน 5)
     local targetMaxPlayersForHop = HopConfig.PlayersToTriggerHop - 2
     
-    DebugPrint("7. เริ่มค้นหาห้องที่ว่างที่สุด (เป้าหมายสูงสุดต้องไม่เกิน " .. tostring(targetMaxPlayersForHop) .. " คน)...")
+    DebugPrint("เริ่มค้นหาห้องที่ว่างที่สุด (ลิมิตสูงสุดห้องใหม่: " .. tostring(targetMaxPlayersForHop) .. " คน)...")
 
     while pagesCompleted < HopConfig.MaxPagesToScan do
         pagesCompleted = pagesCompleted + 1
         local data = FetchServerList(HopConfig.TargetPlaceId, currentCursor)
         
         if data and data.data then
-            for index, server in ipairs(data.data) do
-                local isNotMe = (server.id ~= game.JobId)
-                local isJoinable = (server.playing < server.maxPlayers)
-                
-                if isNotMe and isJoinable then
+            for _, server in ipairs(data.data) do
+                if server.id ~= game.JobId and server.playing < server.maxPlayers then
                     if server.playing < lowestCountFound then
                         lowestCountFound = server.playing
                         bestJobId = server.id
-                        
-                        -- ถ้าเจอห้องที่น้อยมากๆ (1-2 คน) ตัดสินใจเอาเลย
-                        if lowestCountFound <= 2 then
-                            return bestJobId, lowestCountFound
-                        end
+                        if lowestCountFound <= 2 then return bestJobId, lowestCountFound end
                     end
                 end
             end
-            
             if data.nextPageCursor and data.nextPageCursor ~= "" then
                 currentCursor = data.nextPageCursor
             else
@@ -228,15 +251,13 @@ local function ExecuteDeepHop()
 
     if targetId then
         if finalCount <= targetMaxPlayersForHop then
-            DebugPrint("พบห้องที่ดีที่สุดแล้ว (" .. tostring(finalCount) .. " คน) กำลังย้ายเซิร์ฟเวอร์...")
-            local success, err = pcall(
-                function()
-                    TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
-                end
-            )
-            return success
+            DebugPrint("พบห้องเป้าหมาย (" .. tostring(finalCount) .. " คน) กำลังวาป...")
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
+            end)
+            return true
         else
-            DebugPrint("ห้องที่ว่างที่สุดขณะนี้มี " .. tostring(finalCount) .. " คน (เกินลิมิต " .. tostring(targetMaxPlayersForHop) .. ") จะไม่ทำการวาป...")
+            DebugPrint("ห้องที่เจอมี " .. tostring(finalCount) .. " คน ซึ่งเกินเกณฑ์ จะไม่ทำการวาป")
             return false
         end
     end
@@ -244,121 +265,68 @@ local function ExecuteDeepHop()
 end
 
 -- =====================================================================
--- 🚀 7. MAIN THREADS EXECUTION
+-- 🚀 8. MAIN THREADS EXECUTION
 -- =====================================================================
 
--- [ Thread 1: Anti-AFK (VIM & Idled Event) ]
-task.spawn(
-    function()
-        DebugPrint("เริ่มระบบ Anti-AFK (VIM)...")
-        
-        -- ดักจับตอนที่เกมขึ้นสถานะว่ากำลังจะโดนเตะ (Idled)
-        LocalPlayer.Idled:Connect(
-            function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-                DebugPrint("Anti-AFK: ตรวจพบสถานะอยู่นิ่ง (Idled) ป้องกันการโดนเตะเรียบร้อยแล้ว!")
-            end
-        )
+-- [ Thread: Smart Ticket Detection & Hop Monitor ]
+task.spawn(function()
+    DebugPrint("เริ่มระบบตรวจสอบ Smart Ticket Change...")
+    
+    repeat
+        UpdateCurrenciesFromMemory()
+        task.wait(1)
+    until CurrentTicketInMem > 0
+    
+    InitialTicketValue = CurrentTicketInMem
+    DebugPrint("บันทึกค่า Ticket เริ่มต้น: " .. tostring(InitialTicketValue))
 
-        -- ลูปการคลิก VIM แบบสุ่มเพื่อส่ง Input ปลอมไปที่ตัวเกม
-        while true do
-            task.wait(math.random(30, 80))
-            pcall(
-                function()
-                    local randomX = math.random(100, 500)
-                    local randomY = math.random(100, 500)
-                    
-                    -- จำลองการกดเมาส์ซ้าย (0 คือปุ่มซ้าย, true คือกดลง)
-                    VirtualInputManager:SendMouseButtonEvent(randomX, randomY, 0, true, game, 1)
-                    task.wait(0.1)
-                    -- จำลองการปล่อยเมาส์ซ้าย (false คือปล่อยขึ้น)
-                    VirtualInputManager:SendMouseButtonEvent(randomX, randomY, 0, false, game, 1)
-                    
-                    DebugPrint("Anti-AFK: ทำงาน! จำลองการคลิก VIM ที่พิกัด (X: " .. tostring(randomX) .. " , Y: " .. tostring(randomY) .. ")")
+    while true do
+        task.wait(5)
+        UpdateCurrenciesFromMemory()
+        
+        if CurrentTicketInMem > InitialTicketValue then
+            local currentPlayerCount = #Players:GetPlayers()
+            
+            if currentPlayerCount >= HopConfig.PlayersToTriggerHop then
+                DebugPrint("!!! ตั๋วเพิ่มและคนในห้องเกินเกณฑ์ (" .. currentPlayerCount .. " คน) เริ่มหาห้องใหม่ !!!")
+                local teleportDone = false
+                while not teleportDone do
+                    teleportDone = ExecuteDeepHop()
+                    if not teleportDone then task.wait(5) end
                 end
-            )
+            else
+                DebugPrint("ตั๋วเพิ่มเป็น " .. CurrentTicketInMem .. " แต่คนยังน้อย (" .. currentPlayerCount .. ") จำค่าใหม่และฟาร์มต่อ")
+                InitialTicketValue = CurrentTicketInMem
+            end
         end
     end
-)
+end)
 
--- [ Thread 2: Smart Ticket Detection & Hop Monitor ]
-task.spawn(
-    function()
-        DebugPrint("เริ่มระบบตรวจสอบ Smart Ticket Change...")
-        
-        repeat
-            UpdateCurrenciesFromMemory()
-            task.wait(1)
-        until CurrentTicketInMem > 0
-        
-        InitialTicketValue = CurrentTicketInMem
-        DebugPrint("บันทึกค่า Ticket เริ่มต้นสำเร็จ: " .. tostring(InitialTicketValue))
-
-        while true do
-            task.wait(5)
+-- [ Thread: Horst Sync & Ticket Target ]
+local LAST_HORST_MSG = ""
+task.spawn(function()
+    while true do
+        pcall(function()
             UpdateCurrenciesFromMemory()
             
-            if CurrentTicketInMem > InitialTicketValue then
-                local currentPlayerCount = #Players:GetPlayers()
+            if _G.Horst_AccountChangeDone and CurrentTicketInMem >= AccountSwitchConfig.TargetTickets then
+                DebugPrint("ตั๋วครบ " .. AccountSwitchConfig.TargetTickets .. " สลับไอดี!")
+                _G.Horst_AccountChangeDone()
+            end
+            
+            if _G.Horst_SetDescription then
+                local logParts = {}
+                if LogDisplayConfig.ShowSeeds then table.insert(logParts, "🌱 " .. cachedSeedsText) end
+                if LogDisplayConfig.ShowTickets then table.insert(logParts, "🎟️ " .. cachedTicketsText) end
+                if LogDisplayConfig.ShowEggs then table.insert(logParts, "🥚 " .. cachedEggsText) end
                 
-                -- ตรวจสอบจำนวนคน
-                if currentPlayerCount >= HopConfig.PlayersToTriggerHop then
-                    
-                    DebugPrint("!!! ตั๋วเพิ่ม (" .. InitialTicketValue .. " -> " .. CurrentTicketInMem .. ") + คนในห้องเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องใหม่ !!!")
-                    
-                    local teleportDone = false
-                    while not teleportDone do
-                        teleportDone = ExecuteDeepHop()
-                        if not teleportDone then
-                            DebugPrint("ไม่พบห้องที่ปลอดภัย หรือวาปล้มเหลว ลองหาใหม่ใน 5 วินาที...")
-                            task.wait(5)
-                        end
-                    end
-                    
-                else
-                    
-                    -- ถ้าตั๋วเพิ่มแล้ว แต่คนในห้องยังไม่ถึงเกณฑ์ที่ตั้งไว้ (น้อยกว่า 7)
-                    DebugPrint("ตั๋วเพิ่มเป็น " .. CurrentTicketInMem .. " แต่คนในห้องมีแค่ " .. currentPlayerCount .. " คน (ยังไม่ถึง " .. HopConfig.PlayersToTriggerHop .. ") จำค่าใหม่และรอฟาร์มต่อ...")
-                    InitialTicketValue = CurrentTicketInMem
-                    
+                local desc = table.concat(logParts, " , ")
+                if desc ~= LAST_HORST_MSG then
+                    LAST_HORST_MSG = desc
+                    _G.Horst_SetDescription(desc, HttpService:JSONEncode({["Quest"] = desc}))
                 end
             end
-        end
+        end)
+        task.wait(10)
     end
-)
-
--- [ Thread 3: Horst Sync ]
-local LAST_HORST_MSG = ""
-task.spawn(
-    function()
-        while true do
-            pcall(
-                function()
-                    UpdateCurrenciesFromMemory()
-                    
-                    if _G.Horst_AccountChangeDone then
-                        if CurrentTicketInMem >= AccountSwitchConfig.TargetTickets then
-                            DebugPrint("ตั๋วครบเป้าหมาย สลับไอดี!")
-                            _G.Horst_AccountChangeDone()
-                        end
-                    end
-                    
-                    if _G.Horst_SetDescription then
-                        local logParts = {}
-                        if LogDisplayConfig.ShowSeeds then table.insert(logParts, "🌱 " .. cachedSeedsText) end
-                        if LogDisplayConfig.ShowTickets then table.insert(logParts, "🎟️ " .. cachedTicketsText) end
-                        if LogDisplayConfig.ShowEggs then table.insert(logParts, "🥚 " .. cachedEggsText) end
-                        
-                        local desc = table.concat(logParts, " , ")
-                        if desc ~= LAST_HORST_MSG then
-                            LAST_HORST_MSG = desc
-                            _G.Horst_SetDescription(desc, HttpService:JSONEncode({["Quest"] = desc}))
-                        end
-                    end
-                end
-            )
-            task.wait(10)
-        end
-    end
-)
+end)
