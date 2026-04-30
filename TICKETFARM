@@ -1,8 +1,10 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Smart Delta & Absolute Smallest Hop ]]
--- (Anti-AFK Green Dot + Smart Player Limit Logic + Debug Toggle)
+-- [[ Roblox Ticket Farming: Ultimate Edition ]]
+-- (Anti-AFK + Smart Hop + Egg Collector + Horst Log + Rafflesia Sync)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
+
+task.wait(3) -- หน่วงเวลา 3 วินาทีก่อนเริ่มสคริปต์ตามคำสั่ง
 
 -- =====================================================================
 -- ⚙️ 1. MAIN CONFIGURATIONS & DEBUG FUNCTION
@@ -14,7 +16,7 @@ local HopConfig =
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 15,
     PlayersToTriggerHop = 7, -- ถ้าคนในห้องปัจจุบัน >= 7 ถึงจะเริ่มเปลี่ยนห้อง
-    EnableDebug = false,      -- เปิด(true) / ปิด(false) ข้อความ Debug ใน Console
+    EnableDebug = true,      -- เปิด(true) / ปิด(false) ข้อความ Debug ใน Console
     ApiLimit = 100
 }
 
@@ -50,7 +52,25 @@ until game:IsLoaded()
 DebugPrint("1. เกมโหลดเสร็จสมบูรณ์ (game:IsLoaded)")
 
 -- =====================================================================
--- ⚙️ 3. HORST SYSTEM (รันระบบม้าก่อนเป็นอันดับแรกตามลำดับ)
+-- 🛠️ 3. SERVICES & GLOBAL VARIABLES
+-- =====================================================================
+
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+
+while not Players.LocalPlayer do
+    task.wait(1)
+end
+
+local LocalPlayer = Players.LocalPlayer
+DebugPrint("2. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
+
+-- =====================================================================
+-- 🐴 4. HORST SYSTEM (รันระบบม้าก่อนเป็นอันดับแรกตามลำดับ)
 -- =====================================================================
 
 getgenv().HorstConfig = 
@@ -65,7 +85,7 @@ getgenv().HorstConfig =
     }
 }
 
-DebugPrint("2. กำลังโหลดระบบ Horst (ระบบม้า) เพื่อเช็ค Change ID...")
+DebugPrint("3. กำลังโหลดระบบ Horst (ระบบม้า) เพื่อเช็ค Change ID...")
 
 local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
 local successHorst, horstContent = pcall(function() return game:HttpGet(horstUrl) end)
@@ -73,37 +93,79 @@ local successHorst, horstContent = pcall(function() return game:HttpGet(horstUrl
 if successHorst then
     local horstLoadString = loadstring(horstContent)
     horstLoadString()
-    DebugPrint("3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
+    getgenv().HorstRunning = true
+    DebugPrint("4. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
 else
     DebugPrint("⚠️ โหลด Horst ไม่สำเร็จ!")
 end
 
 -- =====================================================================
--- 🛠️ 4. SERVICES & GLOBAL VARIABLES
+-- 🥚 5. STANDALONE: SILENT FAST EGG COLLECTOR
 -- =====================================================================
 
-local VirtualUser = game:GetService("VirtualUser")
-local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
+task.spawn(function()
+    DebugPrint("5. เริ่มระบบเก็บไข่ (Egg Collector)...")
+    
+    local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+    local CollectRemote = RemoteEvents:WaitForChild("CollectCollectable")
+    
+    local function TryCollect(obj)
+        local id = obj:GetAttribute("ID")
+        if id then
+            if type(id) == "number" then
+                pcall(function() 
+                    CollectRemote:FireServer(id) 
+                end)
+                return true
+            end
+        end
+        return false
+    end
 
-while not Players.LocalPlayer do
-    task.wait(1)
-end
+    -- 🌟 ระบบที่ 1: ดักจับไข่เกิดใหม่ (Event Listener)
+    Workspace.DescendantAdded:Connect(function(obj)
+        if TryCollect(obj) then 
+            return 
+        end
+        
+        local conn
+        conn = obj:GetAttributeChangedSignal("ID"):Connect(function()
+            TryCollect(obj)
+            if conn then 
+                conn:Disconnect() 
+            end
+        end)
+        
+        task.delay(2, function()
+            if conn then 
+                conn:Disconnect() 
+            end
+        end)
+    end)
 
-local LocalPlayer = Players.LocalPlayer
-
--- ตัวแปรสำหรับระบบ Check Ticket Change
-local InitialTicketValue = nil
-local CurrentTicketInMem = 0
-
-DebugPrint("4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
+    -- 🌟 ระบบที่ 2: วนลูปกวาดไข่ที่ค้างอยู่ในแมพทั้งหมด (Sweeper Loop)
+    while true do
+        local descendants = Workspace:GetDescendants()
+        
+        for i = 1, #descendants do
+            local v = descendants[i]
+            local id = v:GetAttribute("ID")
+            
+            if id then 
+                pcall(function() 
+                    CollectRemote:FireServer(id) 
+                end) 
+            end
+        end
+        
+        task.wait(3) 
+    end
+end)
 
 -- =====================================================================
--- 🟢 5. ANTI-AFK SYSTEM (SIMPLE VIM MODE WITH GREEN DOT)
+-- 🟢 6. ANTI-AFK SYSTEM (SIMPLE VIM MODE WITH GREEN DOT)
 -- =====================================================================
 
--- [1] สร้าง UI จุดสีเขียวแบบคงที่
 task.spawn(function()
     local sg = Instance.new("ScreenGui")
     sg.Name = "SimpleVIM_UI"
@@ -126,10 +188,9 @@ task.spawn(function()
     corner.CornerRadius = UDim.new(1, 0)
     corner.Parent = dot
     
-    DebugPrint("5. ระบบจุดเขียว Anti-AFK ติดตั้งเรียบร้อย")
+    DebugPrint("6. ระบบจุดเขียว Anti-AFK ติดตั้งเรียบร้อย")
 end)
 
--- [2] ระบบ Virtual Input Mouse (สุ่มคลิกขวา)
 task.spawn(function()
     while true do
         local waitTime = math.random(30, 80)
@@ -143,13 +204,65 @@ task.spawn(function()
 end)
 
 -- =====================================================================
--- 🎒 6. MEMORY DATA SYSTEM (ดึงค่าจากตัวเกมโดยตรง)
+-- 🎒 7. MEMORY DATA SYSTEM & INVENTORY CACHE
 -- =====================================================================
 
 local PlayerDataCache = nil
+local InventoryTableCache = nil
+
 local cachedSeedsText = "0"
 local cachedTicketsText = "0"
 local cachedEggsText = "0"
+local CurrentTicketInMem = 0
+local InitialTicketValue = nil
+
+local function UpdateInventoryCache()
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            pcall(
+                function()
+                    for uid, data in pairs(obj) do
+                        if type(uid) == "string" then
+                            if string.find(uid, "unique_", 1, true) then
+                                if data.ItemData then
+                                    if data.ItemData.ID then
+                                        InventoryTableCache = obj
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            )
+            if InventoryTableCache then break end
+        end
+    end
+end
+
+local function HasRafflesia()
+    if not InventoryTableCache then
+        UpdateInventoryCache()
+    end
+    
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" then
+                if string.find(uid, "unique_", 1, true) then
+                    if data.ItemData then
+                        if data.ItemData.ID then
+                            if data.ItemData.ID == "unit_rafflesia" then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
 
 local function UpdatePlayerDataCache()
     local gc = getgc(true)
@@ -185,7 +298,7 @@ local function UpdateCurrenciesFromMemory()
 end
 
 -- =====================================================================
--- 🔄 7. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
+-- 🔄 8. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
@@ -265,10 +378,10 @@ local function ExecuteDeepHop()
 end
 
 -- =====================================================================
--- 🚀 8. MAIN THREADS EXECUTION
+-- 🚀 9. MAIN THREADS EXECUTION
 -- =====================================================================
 
--- [ Thread: Smart Ticket Detection & Hop Monitor ]
+-- [ Thread 1: Smart Ticket Detection & Hop Monitor ]
 task.spawn(function()
     DebugPrint("เริ่มระบบตรวจสอบ Smart Ticket Change...")
     
@@ -302,7 +415,7 @@ task.spawn(function()
     end
 end)
 
--- [ Thread: Horst Sync & Ticket Target ]
+-- [ Thread 2: Horst Sync, Rafflesia Check & Target Limit ]
 local LAST_HORST_MSG = ""
 task.spawn(function()
     while true do
@@ -315,10 +428,26 @@ task.spawn(function()
             end
             
             if _G.Horst_SetDescription then
+                local hasRaff = HasRafflesia()
+                local raffStr = "False"
+                if hasRaff then
+                    raffStr = "True"
+                end
+                
                 local logParts = {}
-                if LogDisplayConfig.ShowSeeds then table.insert(logParts, "🌱 " .. cachedSeedsText) end
-                if LogDisplayConfig.ShowTickets then table.insert(logParts, "🎟️ " .. cachedTicketsText) end
-                if LogDisplayConfig.ShowEggs then table.insert(logParts, "🥚 " .. cachedEggsText) end
+                
+                if LogDisplayConfig.ShowSeeds then 
+                    table.insert(logParts, "🌱 " .. cachedSeedsText) 
+                end
+                if LogDisplayConfig.ShowTickets then 
+                    table.insert(logParts, "🎟️ " .. cachedTicketsText) 
+                end
+                if LogDisplayConfig.ShowEggs then 
+                    table.insert(logParts, "🥚 " .. cachedEggsText) 
+                end
+                if LogDisplayConfig.ShowRafflesia then
+                    table.insert(logParts, "🌸 Raff: " .. raffStr)
+                end
                 
                 local desc = table.concat(logParts, " , ")
                 if desc ~= LAST_HORST_MSG then
