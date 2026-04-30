@@ -14,7 +14,7 @@ local HopConfig =
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 15,
     PlayersToTriggerHop = 7, -- ถ้าคนในห้องปัจจุบัน >= 7 ถึงจะเริ่มเปลี่ยนห้อง
-    EnableDebug = true,      -- เปิด(true) / ปิด(false) ข้อความ Debug ใน Console
+    EnableDebug = false,      -- เปิด(true) / ปิด(false) ข้อความ Debug ใน Console
     ApiLimit = 100
 }
 
