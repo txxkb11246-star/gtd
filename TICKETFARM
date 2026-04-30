@@ -1,16 +1,24 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: All-in-One Thread ]]
--- (Anti-AFK + Auto Hop + Horst Sync & Account Switch)
+-- [[ Roblox Ticket Farming: Debug & High-Stability Edition ]]
+-- (Anti-AFK + New Auto Hop + Horst Sync & Account Switch)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
 -- =====================================================================
--- ⚙️ 1. HORST INITIALIZATION (รันระบบแกนกลางทันทีเมื่อเกมโหลดเสร็จ)
+-- ⚙️ 1. INITIALIZATION & DEBUG START
 -- =====================================================================
+
+print("[DEBUG]: สคริปต์เริ่มทำงาน...")
 
 repeat
     task.wait()
 until game:IsLoaded()
+
+print("[DEBUG]: 1. เกมโหลดเสร็จสมบูรณ์ (game:IsLoaded)")
+
+-- =====================================================================
+-- ⚙️ 2. HORST SYSTEM (รันระบบแกนกลาง)
+-- =====================================================================
 
 getgenv().HorstConfig = 
 {
@@ -24,18 +32,22 @@ getgenv().HorstConfig =
     }
 }
 
+print("[DEBUG]: 2. เริ่มโหลดระบบ Horst...")
+
 local horstUrl = "https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"
 local horstHttpGet = game:HttpGet(horstUrl)
 local horstLoadString = loadstring(horstHttpGet)
 horstLoadString()
 
+print("[DEBUG]: 3. ระบบ Horst ถูกโหลดเรียบร้อยแล้ว")
+
 -- =====================================================================
--- ⚙️ 2. MAIN CONFIGURATIONS (ตั้งค่าหลักทั้งหมดอยู่ที่นี่)
+-- ⚙️ 3. MAIN CONFIGURATIONS
 -- =====================================================================
 
 local AccountSwitchConfig = 
 {
-    TargetTickets = 200000 -- จำนวนตั๋วที่ต้องการเพื่อเปลี่ยนไอดี
+    TargetTickets = 200000 
 }
 
 local LogDisplayConfig = 
@@ -50,12 +62,12 @@ local HopConfig =
 {
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
-    MaxPlayersTarget = 4, -- [อัปเดต] เปลี่ยนเป็น 4 คนตามที่คุณต้องการ
+    MaxPlayersTarget = 4, -- ห้องเกิน 4 คนจะทำการ Hop ทันที
     ApiLimit = 100
 }
 
 -- =====================================================================
--- 🛠️ 3. SERVICES & VARIABLES
+-- 🛠️ 4. SERVICES & LOCALPLAYER CHECK
 -- =====================================================================
 
 local VirtualUser = game:GetService("VirtualUser")
@@ -68,9 +80,10 @@ while not Players.LocalPlayer do
 end
 
 local LocalPlayer = Players.LocalPlayer
+print("[DEBUG]: 4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
--- 🟢 4. UI SETUP: SIMPLE VIM MODE (GREEN DOT)
+-- 🟢 5. UI SETUP: SIMPLE VIM MODE (GREEN DOT)
 -- =====================================================================
 
 while not LocalPlayer:FindFirstChild("PlayerGui") do
@@ -85,7 +98,6 @@ local dot = Instance.new("Frame")
 dot.Size = UDim2.new(0, 10, 0, 10)
 dot.Position = UDim2.new(0, 30, 1, -30)
 dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-dot.BorderSizePixel = 0
 dot.ZIndex = 999
 dot.Parent = sg
 
@@ -98,11 +110,15 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(1, 0)
 corner.Parent = dot
 
+print("[DEBUG]: 5. สร้างจุดเขียว VIM สำเร็จ")
+
 -- =====================================================================
--- 🔄 5. SERVER HOP FUNCTIONS
+-- 🔄 6. NEW SERVER HOP FUNCTIONS (VERSION UPDATE)
 -- =====================================================================
 
 local function FetchLowPopulationServers(placeId)
+    print("[DEBUG]: กำลังดึงข้อมูลเซิร์ฟเวอร์จาก API...")
+    
     local apiUrl = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=" .. tostring(HopConfig.ApiLimit)
     
     local success, response = pcall(
@@ -128,6 +144,7 @@ local function FetchLowPopulationServers(placeId)
                 if decodeSuccess then
                     if decodedData then
                         if decodedData.data then
+                            print("[DEBUG]: ดึงข้อมูล API สำเร็จ พบ " .. #decodedData.data .. " เซิร์ฟเวอร์")
                             return decodedData.data
                         end
                     end
@@ -136,7 +153,7 @@ local function FetchLowPopulationServers(placeId)
         end
     end
     
-    warn("ไม่สามารถดึงข้อมูลเซิร์ฟเวอร์จาก API ได้")
+    warn("[ERROR]: ไม่สามารถดึงข้อมูลเซิร์ฟเวอร์จาก API ได้")
     return nil
 end
 
@@ -145,7 +162,10 @@ local function FindValidServerInstance(serverList)
         return nil
     end
 
+    print("[DEBUG]: กำลังกรองหาห้องที่มีคนน้อยกว่าหรือเท่ากับ " .. tostring(HopConfig.MaxPlayersTarget) .. " คน...")
+
     for index, serverData in ipairs(serverList) do
+        
         local isNotCurrentServer = (serverData.id ~= game.JobId)
         local hasLowPlayers = (serverData.playing <= HopConfig.MaxPlayersTarget)
         local isNotFull = (serverData.playing < serverData.maxPlayers)
@@ -160,20 +180,21 @@ local function FindValidServerInstance(serverList)
                 end
             end
         end
+        
     end
 
     return nil
 end
 
 local function ExecuteServerHop()
-    print("กำลังเริ่มกระบวนการค้นหาเซิร์ฟเวอร์คนน้อย สำหรับ Place ID: " .. tostring(HopConfig.TargetPlaceId))
+    print("[DEBUG]: เริ่มกระบวนการค้นหาเซิร์ฟเวอร์คนน้อย (PlaceID: " .. tostring(HopConfig.TargetPlaceId) .. ")")
     
     local serverList = FetchLowPopulationServers(HopConfig.TargetPlaceId)
     local targetJobId = FindValidServerInstance(serverList)
 
     if targetJobId then
-        print("พบเซิร์ฟเวอร์ที่เหมาะสมแล้ว! Target Job ID: " .. tostring(targetJobId))
-        print("กำลังทำการย้ายเซิร์ฟเวอร์ (Teleporting)...")
+        print("[DEBUG]: พบเซิร์ฟเวอร์เป้าหมาย ID: " .. tostring(targetJobId))
+        print("[DEBUG]: กำลังทำการย้ายเซิร์ฟเวอร์ (Teleporting)...")
         
         local teleportSuccess, teleportError = pcall(
             function()
@@ -182,15 +203,15 @@ local function ExecuteServerHop()
         )
 
         if not teleportSuccess then
-            warn("การเทเลพอร์ตล้มเหลว: " .. tostring(teleportError))
+            warn("[ERROR]: การเทเลพอร์ตล้มเหลว: " .. tostring(teleportError))
         end
     else
-        warn("ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไข ลองปรับ MaxPlayersTarget หรือรอสักครู่")
+        warn("[WARN]: ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไข (คนอาจเยอะเกินไป)")
     end
 end
 
 -- =====================================================================
--- 🎒 6. INVENTORY & RAFFLESIA CHECKER
+-- 🎒 7. INVENTORY & RAFFLESIA CHECKER
 -- =====================================================================
 
 local InventoryTableCache = nil
@@ -250,7 +271,7 @@ local function HasRafflesia()
 end
 
 -- =====================================================================
--- 💰 7. PLAYER DATA CACHE (MEMORY) WITH TYPE CHECKING
+-- 💰 8. PLAYER DATA CACHE (MEMORY)
 -- =====================================================================
 
 local PlayerDataCache = nil
@@ -268,7 +289,6 @@ local function UpdatePlayerDataCache()
         if type(obj) == "table" then
             pcall(
                 function()
-                    -- [อัปเดต] ค้นหา Table และตรวจเช็ค Type ว่าเป็นตัวเลขเท่านั้น
                     if obj.Seeds then
                         if type(obj.Seeds) == "number" then
                             if obj.Tickets then
@@ -315,130 +335,98 @@ local function UpdateCurrenciesFromMemory()
 end
 
 -- =====================================================================
--- 🚀 8. MAIN THREADS EXECUTION
+-- 🚀 9. MAIN THREADS EXECUTION (THREADS WITH DEBUG)
 -- =====================================================================
 
--- [ Thread 1: Virtual Input Mouse (Anti-AFK) ]
+-- [ Thread 1: Anti-AFK ]
 task.spawn(
     function()
+        print("[DEBUG]: เริ่มต้น Thread 1: Anti-AFK (VIM)")
         while true do
             local waitTime = math.random(30, 80)
             task.wait(waitTime)
 
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
-            
-            print("VIM: Virtual Right-Click executed. Next in: " .. waitTime .. "s")
         end
     end
 )
 
--- [ Thread 2: Player Count Monitor & Auto Hop ]
+-- [ Thread 2: Auto Hop Monitor ]
 task.spawn(
     function()
+        print("[DEBUG]: เริ่มต้น Thread 2: Server Hop Monitor")
         while true do
-            task.wait(5)
+            task.wait(10)
             
             local currentPlayerCount = #Players:GetPlayers()
             
-            -- อิงตาม Config ที่คุณตั้งค่าไว้ (> 4)
             if currentPlayerCount > HopConfig.MaxPlayersTarget then
-                print("ตรวจพบผู้เล่นเกิน " .. tostring(HopConfig.MaxPlayersTarget) .. " คน กำลังเริ่มต้นระบบ Hop...")
+                print("[DEBUG]: ตรวจพบคนในห้อง (" .. currentPlayerCount .. ") เกินเกณฑ์ที่ตั้งไว้!")
                 
                 if HopConfig.HopMode == "PlaceID" then
                     ExecuteServerHop()
-                else
-                    if HopConfig.HopMode == "Lobby" then
-                        print("ระบบ Hop กลับ Lobby ยังไม่ได้ถูกตั้งค่าการทำงาน")
-                    else
-                        warn("ตั้งค่า HopMode ไม่ถูกต้อง")
-                    end
                 end
                 
-                task.wait(15)
+                task.wait(20)
             end
         end
     end
 )
 
--- [ Thread 3: Horst Direct Sync & Account Switcher ]
+-- [ Thread 3: Horst Sync ]
 local LAST_HORST_MSG = ""
 
 task.spawn(
     function()
+        print("[DEBUG]: เริ่มต้น Thread 3: Horst Sync & Account Switcher")
         while true do
             pcall(
                 function()
                     UpdateCurrenciesFromMemory()
                     
-                    -- [ ระบบตรวจสอบการเปลี่ยนไอดี (Account Switch Check) ]
+                    -- ตรวจสอบเงื่อนไขเปลี่ยนไอดี
                     if _G.Horst_AccountChangeDone then
                         local currentTicketsValue = tonumber(cachedTicketsText)
                         
                         if currentTicketsValue then
                             if currentTicketsValue >= AccountSwitchConfig.TargetTickets then
-                                print("Tickets ถึงเป้าหมาย (" .. tostring(AccountSwitchConfig.TargetTickets) .. ")! กำลังส่งสัญญาณเปลี่ยนไอดี...")
-                                
-                                local successChange, errChange = pcall(
-                                    function()
-                                        return _G.Horst_AccountChangeDone()
-                                    end
-                                )
-                                
-                                if successChange then
-                                    print("Account change done sent successfully!")
-                                else
-                                    print("Failed to send DONE: ", tostring(errChange))
-                                end
+                                print("[DEBUG]: เงื่อนไขตั๋วครบ (" .. cachedTicketsText .. ") ส่งคำสั่งสลับไอดี!")
+                                _G.Horst_AccountChangeDone()
                             end
                         end
                     end
                     
-                    -- [ ระบบส่ง Log ไปยัง Horst ]
+                    -- ส่ง Log ไปที่ Horst UI
                     if _G.Horst_SetDescription then
                         
                         local hasRaff = HasRafflesia()
-                        local raffStr = "False"
+                        local raffStr = (hasRaff and "True" or "False")
                         
-                        if hasRaff then
-                            raffStr = "True"
-                        end
-                        
-                        local logParts = 
-                        {
-                        }
+                        local logParts = {}
                         
                         if LogDisplayConfig.ShowSeeds then
-                            local str = string.format("🌱 %s", cachedSeedsText)
-                            table.insert(logParts, str)
+                            table.insert(logParts, string.format("🌱 %s", cachedSeedsText))
                         end
                         
                         if LogDisplayConfig.ShowTickets then
-                            local str = string.format("🎟️ %s", cachedTicketsText)
-                            table.insert(logParts, str)
+                            table.insert(logParts, string.format("🎟️ %s", cachedTicketsText))
                         end
                         
                         if LogDisplayConfig.ShowEggs then
-                            local str = string.format("🥚 %s", cachedEggsText)
-                            table.insert(logParts, str)
+                            table.insert(logParts, string.format("🥚 %s", cachedEggsText))
                         end
                         
                         if LogDisplayConfig.ShowRafflesia then
-                            local str = string.format("🌸 Raff: %s", raffStr)
-                            table.insert(logParts, str)
+                            table.insert(logParts, string.format("🌸 Raff: %s", raffStr))
                         end
                         
                         local desc = table.concat(logParts, " , ")
                         
-                        local json_data = 
-                        {
-                            ["Quest"] = desc
-                        }
-                        
-                        local encode_json = HttpService:JSONEncode(json_data)
-                        
                         if desc ~= LAST_HORST_MSG then
                             LAST_HORST_MSG = desc
+                            local json_data = {["Quest"] = desc}
+                            local encode_json = HttpService:JSONEncode(json_data)
                             _G.Horst_SetDescription(desc, encode_json)
                         end
                         
