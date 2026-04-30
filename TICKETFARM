@@ -1,6 +1,6 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Ultra Deep Hop & Safe Win-Check ]]
--- (Anti-AFK + Ultra Deep Server Hop 1500+ + Safe Win Detection)
+-- [[ Roblox Ticket Farming: Absolute Deep Hop & Safe Win-Check ]]
+-- (Anti-AFK + Absolute Smallest Server Hop + Safe Win Detection)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -63,7 +63,7 @@ local HopConfig =
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 15,     -- ดึงข้อมูลสูงสุด 15 หน้า (รวม 1,500 เซิร์ฟเวอร์)
-    MaxPlayersTarget = 5,    -- ถ้าเจอห้องคน 0-5 คน ให้เข้าทันที
+    MaxPlayersTarget = 5,    -- ถ้าเจอห้องคนน้อยกว่าหรือเท่ากับ 5 ให้ "วาปทันที"
     ApiLimit = 100
 }
 
@@ -82,8 +82,8 @@ while not Players.LocalPlayer do
 end
 
 local LocalPlayer = Players.LocalPlayer
-local isGameFinished = false -- เริ่มต้นเป็น False เสมอเมื่อรันสคริปต์ใหม่
-local canCheckWin = false    -- ตัวป้องกันการอ่าน Log เก่า
+local isGameFinished = false -- สถานะเล่นจบในรอบปัจจุบัน
+local canCheckWin = false    -- ตัวป้องกันการอ่าน Log เก่าที่ค้างมา
 
 print("[DEBUG]: 4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
@@ -116,13 +116,13 @@ corner.CornerRadius = UDim.new(1, 0)
 corner.Parent = dot
 
 -- =====================================================================
--- 🛠️ 6. SAFE WIN DETECTION (ดักจับเฉพาะข้อความใหม่)
+-- 🛠️ 6. SAFE WIN DETECTION (ดักจับ tweenfloor เฉพาะรอบปัจจุบัน)
 -- =====================================================================
 
--- รอ 10 วินาทีเพื่อให้ Console Log เก่าๆ ถูกข้ามไปก่อนเริ่มเช็คจริง
+-- ข้าม Log เก่าที่อาจค้างอยู่ใน Console ตอนโหลดเข้าเกม
 task.delay(10, function()
     canCheckWin = true
-    print("[DEBUG]: 6. ระบบ Win Detection พร้อมทำงาน (ข้าม Log เก่าแล้ว)")
+    print("[DEBUG]: 6. ระบบ Win Detection พร้อมทำงาน (ผ่านไป 10 วิ ข้าม Log เก่าแล้ว)")
 end)
 
 LogService.MessageOut:Connect(
@@ -130,18 +130,19 @@ LogService.MessageOut:Connect(
         if canCheckWin then
             if string.find(string.lower(message), "tweenfloor") then
                 isGameFinished = true
-                print("[DEBUG]: !!! พบ tweenfloor ใหม่ !!! เตรียมตัวทำการ Hop")
+                print("[DEBUG]: !!! ตรวจพบการจบเกม (tweenfloor) !!!")
             end
         end
     end
 )
 
 -- =====================================================================
--- 🔄 7. ULTRA DEEP SERVER HOP FUNCTIONS (VERSION 1500+)
+-- 🔄 7. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
-    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=" .. tostring(HopConfig.ApiLimit)
+    -- ใช้ sortOrder=Desc เพื่อให้ API ส่งห้องที่คนน้อยๆ มาให้ก่อน
+    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
     
     if cursor then
         if cursor ~= "" then
@@ -169,9 +170,7 @@ local function FetchServerList(placeId, cursor)
                     end
                 )
                 if decodeSuccess then
-                    if decoded then
-                        return decoded
-                    end
+                    return decoded
                 end
             end
         end
@@ -179,46 +178,43 @@ local function FetchServerList(placeId, cursor)
     return nil
 end
 
-local function FindSmallestServerDeep()
+local function FindBestServer()
     local bestJobId = nil
-    local lowestCount = math.huge
+    local lowestCountFound = math.huge
     local currentCursor = ""
     local pagesCompleted = 0
     
-    print("[DEBUG]: 7. เริ่มการสแกนหาเซิร์ฟเวอร์แบบเจาะลึก 15 หน้า (Volt Deep Scan)...")
+    print("[DEBUG]: 7. เริ่มค้นหาห้องที่ว่างที่สุด (Absolute Deep Scan)...")
 
     while pagesCompleted < HopConfig.MaxPagesToScan do
         pagesCompleted = pagesCompleted + 1
-        
         local data = FetchServerList(HopConfig.TargetPlaceId, currentCursor)
         
         if data then
             if data.data then
                 for index, server in ipairs(data.data) do
-                    local isNotCurrent = (server.id ~= game.JobId)
-                    local isNotFull = (server.playing < server.maxPlayers)
+                    local isNotMe = (server.id ~= game.JobId)
+                    local isJoinable = (server.playing < server.maxPlayers)
                     
-                    if isNotCurrent then
-                        if isNotFull then
-                            if server.playing < lowestCount then
-                                lowestCount = server.playing
+                    if isNotMe then
+                        if isJoinable then
+                            -- บันทึกค่าห้องที่คนน้อยที่สุดที่เจอในปัจจุบัน
+                            if server.playing < lowestCountFound then
+                                lowestCountFound = server.playing
                                 bestJobId = server.id
                                 
-                                if lowestCount <= HopConfig.MaxPlayersTarget then
-                                    print("[DEBUG]: พบห้องตรงเป้าหมายในหน้าที่: " .. tostring(pagesCompleted))
-                                    return bestJobId, lowestCount
+                                -- [แก้ไข]: ถ้าเจอห้องที่คนน้อยกว่าหรือเท่ากับ Target (5 คน) ให้ "วาปทันที" ไม่ต้องรอสแกนหน้าอื่น
+                                if lowestCountFound <= HopConfig.MaxPlayersTarget then
+                                    print("[DEBUG]: พบห้องที่คนน้อยที่สุด (" .. tostring(lowestCountFound) .. " คน) ในหน้า " .. tostring(pagesCompleted))
+                                    return bestJobId, lowestCountFound
                                 end
                             end
                         end
                     end
                 end
                 
-                if data.nextPageCursor then
-                    if data.nextPageCursor ~= "" then
-                        currentCursor = data.nextPageCursor
-                    else
-                        break
-                    end
+                if data.nextPageCursor and data.nextPageCursor ~= "" then
+                    currentCursor = data.nextPageCursor
                 else
                     break
                 end
@@ -226,31 +222,30 @@ local function FindSmallestServerDeep()
                 break
             end
         else
-            warn("[DEBUG]: สแกนหน้า " .. tostring(pagesCompleted) .. " ล้มเหลว")
             break
         end
-        task.wait(0.1)
+        task.wait(0.05)
     end
-    return bestJobId, lowestCount
+    return bestJobId, lowestCountFound
 end
 
 local function ExecuteDeepHop()
-    local targetId, finalCount = FindSmallestServerDeep()
+    local targetId, finalCount = FindBestServer()
 
     if targetId then
-        print("[DEBUG]: ผลลัพธ์: พบห้อง " .. tostring(finalCount) .. " คน - กำลังย้ายเซิร์ฟเวอร์...")
-        local teleportSuccess, teleportError = pcall(
+        print("[DEBUG]: ผลการค้นหา: พบห้อง " .. tostring(finalCount) .. " คน - กำลังทำการ Teleport...")
+        local success, err = pcall(
             function()
                 TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
             end
         )
-        return teleportSuccess
+        return success
     end
     return false
 end
 
 -- =====================================================================
--- 🎒 8. INVENTORY & PLAYER DATA CACHE (MEMORY SYNC)
+-- 🎒 8. PLAYER DATA CACHE (MEMORY SYNC)
 -- =====================================================================
 
 local InventoryTableCache = nil
@@ -343,30 +338,29 @@ task.spawn(
     end
 )
 
--- [ Thread 2: Ultra Deep Hop Monitor (Loop จนกว่าจะสำเร็จ) ]
+-- [ Thread 2: Auto Hop Monitor (เงื่อนไขคนเยอะ + เล่นจบ) ]
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 2: Server Hop Monitor (Safe Mode)")
+        print("[DEBUG]: เริ่มต้น Thread 2: Server Hop Monitor")
         while true do
             task.wait(10)
             local currentPlayerCount = #Players:GetPlayers()
             
-            -- เงื่อนไข: คนในห้อง > 4 และ ต้องเป็น "tweenfloor" ที่เกิดขึ้นใหม่ในรอบนี้เท่านั้น
+            -- เงื่อนไข: คนเกิน 4 คน และต้องตรวจเจอ tweenfloor ในรอบนี้แล้วเท่านั้น
             if currentPlayerCount > 4 then
                 if isGameFinished then
-                    print("[DEBUG]: เงื่อนไขครบ (คนเยอะ + จบเกมใหม่) เริ่มกระบวนการย้ายเซิร์ฟเวอร์...")
+                    print("[DEBUG]: ครบเงื่อนไขย้ายเซิร์ฟเวอร์! กำลังหาห้องว่างที่สุด...")
                     local teleportDone = false
                     
                     while not teleportDone do
                         teleportDone = ExecuteDeepHop()
                         if not teleportDone then
-                            print("[DEBUG]: การย้ายล้มเหลว กำลังสแกนหาห้องใหม่ใน 5 วินาที (Retry Loop)...")
+                            print("[DEBUG]: วาปล้มเหลว/หาห้องไม่เจอ กำลังลองใหม่ใน 5 วินาที...")
                             task.wait(5)
                         end
                     end
                 else
-                    -- แจ้งเตือนสั้นๆ ใน Console ว่าคนเยอะ แต่รอเล่นจบก่อน
-                    print("[DEBUG]: คนในห้อง (" .. currentPlayerCount .. ") เยอะเกิน แต่กำลังรอเล่นจบ...")
+                    print("[DEBUG]: ห้องมี " .. currentPlayerCount .. " คน (เกินเกณฑ์) แต่ยังไม่พบ tweenfloor เพื่อจบเกม")
                 end
             end
         end
@@ -384,9 +378,9 @@ task.spawn(
                     UpdateCurrenciesFromMemory()
                     
                     if _G.Horst_AccountChangeDone then
-                        local currentTicketsValue = tonumber(cachedTicketsText)
-                        if currentTicketsValue and currentTicketsValue >= AccountSwitchConfig.TargetTickets then
-                            print("[DEBUG]: ตั๋วครบเป้าหมาย! ส่งคำสั่งสลับไอดี...")
+                        local currentTickets = tonumber(cachedTicketsText)
+                        if currentTickets and currentTickets >= AccountSwitchConfig.TargetTickets then
+                            print("[DEBUG]: ตั๋วครบเป้าหมาย (" .. cachedTicketsText .. ") สลับไอดี!")
                             _G.Horst_AccountChangeDone()
                         end
                     end
