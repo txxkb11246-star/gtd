@@ -1,6 +1,6 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Absolute Deep Hop & Safe Win-Check ]]
--- (Anti-AFK + Absolute Smallest Server Hop + Safe Win Detection)
+-- [[ Roblox Ticket Farming: Ticket-Delta & Absolute Deep Hop ]]
+-- (Anti-AFK + Absolute Smallest Server Hop + Ticket Change Detect)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -62,8 +62,8 @@ local HopConfig =
 {
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
-    MaxPagesToScan = 15,     -- ดึงข้อมูลสูงสุด 15 หน้า (รวม 1,500 เซิร์ฟเวอร์)
-    MaxPlayersTarget = 5,    -- ถ้าเจอห้องคนน้อยกว่าหรือเท่ากับ 5 ให้ "วาปทันที"
+    MaxPagesToScan = 15,
+    MaxPlayersTarget = 5,
     ApiLimit = 100
 }
 
@@ -71,7 +71,6 @@ local HopConfig =
 -- 🛠️ 4. SERVICES & GLOBAL VARIABLES
 -- =====================================================================
 
-local LogService = game:GetService("LogService")
 local VirtualUser = game:GetService("VirtualUser")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
@@ -82,170 +81,16 @@ while not Players.LocalPlayer do
 end
 
 local LocalPlayer = Players.LocalPlayer
-local isGameFinished = false -- สถานะเล่นจบในรอบปัจจุบัน
-local canCheckWin = false    -- ตัวป้องกันการอ่าน Log เก่าที่ค้างมา
+
+-- ตัวแปรสำหรับระบบ Check Ticket Change
+local InitialTicketValue = nil
+local CurrentTicketInMem = 0
+local IsFarmDone = false
 
 print("[DEBUG]: 4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
--- 🟢 5. UI SETUP: SIMPLE VIM MODE (GREEN DOT)
--- =====================================================================
-
-while not LocalPlayer:FindFirstChild("PlayerGui") do
-    task.wait(1)
-end
-
-local sg = Instance.new("ScreenGui")
-sg.Name = "SimpleVIM_UI"
-sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local dot = Instance.new("Frame")
-dot.Size = UDim2.new(0, 10, 0, 10)
-dot.Position = UDim2.new(0, 30, 1, -30)
-dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-dot.ZIndex = 999
-dot.Parent = sg
-
-local stroke = Instance.new("UIStroke")
-stroke.Thickness = 2
-stroke.Color = Color3.fromRGB(0, 0, 0)
-stroke.Parent = dot
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = dot
-
--- =====================================================================
--- 🛠️ 6. SAFE WIN DETECTION (ดักจับ tweenfloor เฉพาะรอบปัจจุบัน)
--- =====================================================================
-
--- ข้าม Log เก่าที่อาจค้างอยู่ใน Console ตอนโหลดเข้าเกม
-task.delay(10, function()
-    canCheckWin = true
-    print("[DEBUG]: 6. ระบบ Win Detection พร้อมทำงาน (ผ่านไป 10 วิ ข้าม Log เก่าแล้ว)")
-end)
-
-LogService.MessageOut:Connect(
-    function(message, messageType)
-        if canCheckWin then
-            if string.find(string.lower(message), "tweenfloor") then
-                isGameFinished = true
-                print("[DEBUG]: !!! ตรวจพบการจบเกม (tweenfloor) !!!")
-            end
-        end
-    end
-)
-
--- =====================================================================
--- 🔄 7. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
--- =====================================================================
-
-local function FetchServerList(placeId, cursor)
-    -- ใช้ sortOrder=Desc เพื่อให้ API ส่งห้องที่คนน้อยๆ มาให้ก่อน
-    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
-    
-    if cursor then
-        if cursor ~= "" then
-            url = url .. "&cursor=" .. tostring(cursor)
-        end
-    end
-
-    local success, response = pcall(
-        function()
-            return request(
-                {
-                    Url = url,
-                    Method = "GET"
-                }
-            )
-        end
-    )
-
-    if success then
-        if response then
-            if response.Body then
-                local decodeSuccess, decoded = pcall(
-                    function()
-                        return HttpService:JSONDecode(response.Body)
-                    end
-                )
-                if decodeSuccess then
-                    return decoded
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function FindBestServer()
-    local bestJobId = nil
-    local lowestCountFound = math.huge
-    local currentCursor = ""
-    local pagesCompleted = 0
-    
-    print("[DEBUG]: 7. เริ่มค้นหาห้องที่ว่างที่สุด (Absolute Deep Scan)...")
-
-    while pagesCompleted < HopConfig.MaxPagesToScan do
-        pagesCompleted = pagesCompleted + 1
-        local data = FetchServerList(HopConfig.TargetPlaceId, currentCursor)
-        
-        if data then
-            if data.data then
-                for index, server in ipairs(data.data) do
-                    local isNotMe = (server.id ~= game.JobId)
-                    local isJoinable = (server.playing < server.maxPlayers)
-                    
-                    if isNotMe then
-                        if isJoinable then
-                            -- บันทึกค่าห้องที่คนน้อยที่สุดที่เจอในปัจจุบัน
-                            if server.playing < lowestCountFound then
-                                lowestCountFound = server.playing
-                                bestJobId = server.id
-                                
-                                -- [แก้ไข]: ถ้าเจอห้องที่คนน้อยกว่าหรือเท่ากับ Target (5 คน) ให้ "วาปทันที" ไม่ต้องรอสแกนหน้าอื่น
-                                if lowestCountFound <= HopConfig.MaxPlayersTarget then
-                                    print("[DEBUG]: พบห้องที่คนน้อยที่สุด (" .. tostring(lowestCountFound) .. " คน) ในหน้า " .. tostring(pagesCompleted))
-                                    return bestJobId, lowestCountFound
-                                end
-                            end
-                        end
-                    end
-                end
-                
-                if data.nextPageCursor and data.nextPageCursor ~= "" then
-                    currentCursor = data.nextPageCursor
-                else
-                    break
-                end
-            else
-                break
-            end
-        else
-            break
-        end
-        task.wait(0.05)
-    end
-    return bestJobId, lowestCountFound
-end
-
-local function ExecuteDeepHop()
-    local targetId, finalCount = FindBestServer()
-
-    if targetId then
-        print("[DEBUG]: ผลการค้นหา: พบห้อง " .. tostring(finalCount) .. " คน - กำลังทำการ Teleport...")
-        local success, err = pcall(
-            function()
-                TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
-            end
-        )
-        return success
-    end
-    return false
-end
-
--- =====================================================================
--- 🎒 8. PLAYER DATA CACHE (MEMORY SYNC)
+-- 🎒 5. MEMORY DATA SYSTEM (ดึงค่าจากตัวเกมโดยตรง)
 -- =====================================================================
 
 local InventoryTableCache = nil
@@ -253,41 +98,6 @@ local PlayerDataCache = nil
 local cachedSeedsText = "0"
 local cachedTicketsText = "0"
 local cachedEggsText = "0"
-
-local function UpdateInventoryCache()
-    local gc = getgc(true)
-    for i = 1, #gc do
-        local obj = gc[i]
-        if type(obj) == "table" then
-            pcall(
-                function()
-                    for uid, data in pairs(obj) do
-                        if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
-                            if data.ItemData and data.ItemData.ID then
-                                InventoryTableCache = obj
-                            end
-                        end
-                    end
-                end
-            )
-            if InventoryTableCache then break end
-        end
-    end
-end
-
-local function HasRafflesia()
-    if not InventoryTableCache then UpdateInventoryCache() end
-    if InventoryTableCache then
-        for uid, data in pairs(InventoryTableCache) do
-            if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
-                if data.ItemData and data.ItemData.ID == "unit_rafflesia" then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
 
 local function UpdatePlayerDataCache()
     local gc = getgc(true)
@@ -313,8 +123,9 @@ local function UpdateCurrenciesFromMemory()
         function()
             if not PlayerDataCache then UpdatePlayerDataCache() end
             if PlayerDataCache then
+                CurrentTicketInMem = PlayerDataCache.Tickets or 0
                 cachedSeedsText = tostring(PlayerDataCache.Seeds or 0)
-                cachedTicketsText = tostring(PlayerDataCache.Tickets or 0)
+                cachedTicketsText = tostring(CurrentTicketInMem)
                 cachedEggsText = tostring(PlayerDataCache.EasterEggs or 0)
             end
         end
@@ -322,76 +133,168 @@ local function UpdateCurrenciesFromMemory()
 end
 
 -- =====================================================================
--- 🚀 9. MAIN THREADS EXECUTION
+-- 🔄 6. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
+-- =====================================================================
+
+local function FetchServerList(placeId, cursor)
+    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
+    
+    if cursor then
+        if cursor ~= "" then
+            url = url .. "&cursor=" .. tostring(cursor)
+        end
+    end
+
+    local success, response = pcall(
+        function()
+            return request(
+                {
+                    Url = url,
+                    Method = "GET"
+                }
+            )
+        end
+    )
+
+    if success then
+        if response and response.Body then
+            local decodeSuccess, decoded = pcall(
+                function()
+                    return HttpService:JSONDecode(response.Body)
+                end
+            )
+            if decodeSuccess then return decoded end
+        end
+    end
+    return nil
+end
+
+local function FindBestServer()
+    local bestJobId = nil
+    local lowestCountFound = math.huge
+    local currentCursor = ""
+    local pagesCompleted = 0
+    
+    while pagesCompleted < HopConfig.MaxPagesToScan do
+        pagesCompleted = pagesCompleted + 1
+        local data = FetchServerList(HopConfig.TargetPlaceId, currentCursor)
+        
+        if data and data.data then
+            for index, server in ipairs(data.data) do
+                if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                    if server.playing < lowestCountFound then
+                        lowestCountFound = server.playing
+                        bestJobId = server.id
+                        
+                        if lowestCountFound <= HopConfig.MaxPlayersTarget then
+                            return bestJobId, lowestCountFound
+                        end
+                    end
+                end
+            end
+            if data.nextPageCursor and data.nextPageCursor ~= "" then
+                currentCursor = data.nextPageCursor
+            else
+                break
+            end
+        else
+            break
+        end
+        task.wait(0.05)
+    end
+    return bestJobId, lowestCountFound
+end
+
+local function ExecuteDeepHop()
+    local targetId, finalCount = FindBestServer()
+    if targetId then
+        print("[DEBUG]: วาปไปห้อง " .. tostring(finalCount) .. " คน...")
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
+        end)
+        return true
+    end
+    return false
+end
+
+-- =====================================================================
+-- 🚀 7. MAIN THREADS EXECUTION
 -- =====================================================================
 
 -- [ Thread 1: Anti-AFK ]
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 1: Anti-AFK (VIM)")
         while true do
-            local waitTime = math.random(30, 80)
-            task.wait(waitTime)
+            task.wait(math.random(30, 80))
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(math.random(1, 50), math.random(1, 50)))
         end
     end
 )
 
--- [ Thread 2: Auto Hop Monitor (เงื่อนไขคนเยอะ + เล่นจบ) ]
+-- [ Thread 2: Ticket Detection & Hop Monitor ]
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 2: Server Hop Monitor")
+        print("[DEBUG]: เริ่มระบบตรวจสอบ Ticket Change...")
+        
+        -- รอให้ค่า Ticket เริ่มต้นโหลดเสร็จก่อน
+        repeat
+            UpdateCurrenciesFromMemory()
+            task.wait(1)
+        until CurrentTicketInMem > 0
+        
+        InitialTicketValue = CurrentTicketInMem
+        print("[DEBUG]: บันทึกค่าเริ่มต้นสำเร็จ: " .. tostring(InitialTicketValue))
+
         while true do
-            task.wait(10)
-            local currentPlayerCount = #Players:GetPlayers()
+            task.wait(5)
+            UpdateCurrenciesFromMemory()
             
-            -- เงื่อนไข: คนเกิน 4 คน และต้องตรวจเจอ tweenfloor ในรอบนี้แล้วเท่านั้น
-            if currentPlayerCount > 4 then
-                if isGameFinished then
-                    print("[DEBUG]: ครบเงื่อนไขย้ายเซิร์ฟเวอร์! กำลังหาห้องว่างที่สุด...")
+            -- เช็คว่า Ticket เพิ่มขึ้นหรือยัง
+            if not IsFarmDone then
+                if CurrentTicketInMem > InitialTicketValue then
+                    IsFarmDone = true
+                    print("[DEBUG]: !!! Ticket เพิ่มขึ้นแล้ว (" .. InitialTicketValue .. " -> " .. CurrentTicketInMem .. ") !!!")
+                end
+            end
+
+            -- เงื่อนไขการย้าย: Ticket เพิ่มแล้ว AND คนในห้อง > 4
+            if IsFarmDone then
+                local currentPlayerCount = #Players:GetPlayers()
+                if currentPlayerCount > 4 then
+                    print("[DEBUG]: ฟาร์มเสร็จ + คนเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องว่างที่สุด...")
                     local teleportDone = false
-                    
                     while not teleportDone do
                         teleportDone = ExecuteDeepHop()
-                        if not teleportDone then
-                            print("[DEBUG]: วาปล้มเหลว/หาห้องไม่เจอ กำลังลองใหม่ใน 5 วินาที...")
-                            task.wait(5)
-                        end
+                        task.wait(5)
                     end
-                else
-                    print("[DEBUG]: ห้องมี " .. currentPlayerCount .. " คน (เกินเกณฑ์) แต่ยังไม่พบ tweenfloor เพื่อจบเกม")
                 end
             end
         end
     end
 )
 
--- [ Thread 3: Horst Sync & Account Switcher ]
+-- [ Thread 3: Horst Sync ]
 local LAST_HORST_MSG = ""
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 3: Horst Sync")
         while true do
             pcall(
                 function()
                     UpdateCurrenciesFromMemory()
                     
                     if _G.Horst_AccountChangeDone then
-                        local currentTickets = tonumber(cachedTicketsText)
-                        if currentTickets and currentTickets >= AccountSwitchConfig.TargetTickets then
-                            print("[DEBUG]: ตั๋วครบเป้าหมาย (" .. cachedTicketsText .. ") สลับไอดี!")
+                        if CurrentTicketInMem >= AccountSwitchConfig.TargetTickets then
+                            print("[DEBUG]: ตั๋วครบเป้า สลับไอดี!")
                             _G.Horst_AccountChangeDone()
                         end
                     end
                     
                     if _G.Horst_SetDescription then
-                        local hasRaff = HasRafflesia()
                         local logParts = {}
                         if LogDisplayConfig.ShowSeeds then table.insert(logParts, "🌱 " .. cachedSeedsText) end
                         if LogDisplayConfig.ShowTickets then table.insert(logParts, "🎟️ " .. cachedTicketsText) end
                         if LogDisplayConfig.ShowEggs then table.insert(logParts, "🥚 " .. cachedEggsText) end
-                        if LogDisplayConfig.ShowRafflesia then table.insert(logParts, "🌸 Raff: " .. (hasRaff and "True" or "False")) end
                         
                         local desc = table.concat(logParts, " , ")
                         if desc ~= LAST_HORST_MSG then
