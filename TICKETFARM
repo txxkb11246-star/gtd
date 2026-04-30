@@ -1,6 +1,6 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Deep Scan & Auto-Retry Edition ]]
--- (Anti-AFK + Deep Server Hop + Horst Sync & Account Switch)
+-- [[ Roblox Ticket Farming: Ultimate Deep Scan & Win-Check Edition ]]
+-- (Anti-AFK + Deep Server Hop + Win Detection + Horst Sync)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -63,14 +63,15 @@ local HopConfig =
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 8,      -- สแกนทั้งหมด 8 หน้า (รวม 800 เซิร์ฟเวอร์)
-    MaxPlayersTarget = 5,    -- ถ้าเจอห้องคนน้อยกว่าหรือเท่ากับ 5 ให้เข้าทันที
+    MaxPlayersTarget = 5,    -- ถ้าเจอห้องที่มีคนน้อยกว่าหรือเท่ากับ 5 ให้เข้าทันที
     ApiLimit = 100
 }
 
 -- =====================================================================
--- 🛠️ 4. SERVICES & LOCALPLAYER CHECK
+-- 🛠️ 4. SERVICES & VARIABLES
 -- =====================================================================
 
+local LogService = game:GetService("LogService")
 local VirtualUser = game:GetService("VirtualUser")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
@@ -81,9 +82,55 @@ while not Players.LocalPlayer do
 end
 
 local LocalPlayer = Players.LocalPlayer
+local isGameFinished = false -- ตัวแปรเช็คสถานะจาก Console
+
+print("[DEBUG]: 4. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
--- 🔄 5. DEEP SCAN SERVER HOP FUNCTIONS (VERSION UPDATE)
+-- 🟢 5. UI SETUP: SIMPLE VIM MODE (GREEN DOT)
+-- =====================================================================
+
+while not LocalPlayer:FindFirstChild("PlayerGui") do
+    task.wait(1)
+end
+
+local sg = Instance.new("ScreenGui")
+sg.Name = "SimpleVIM_UI"
+sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 10, 0, 10)
+dot.Position = UDim2.new(0, 30, 1, -30)
+dot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+dot.ZIndex = 999
+dot.Parent = sg
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(0, 0, 0)
+stroke.Parent = dot
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = dot
+
+print("[DEBUG]: 5. สร้างจุดเขียว VIM สำเร็จ")
+
+-- =====================================================================
+-- 🛠️ 6. WIN DETECTION SYSTEM (ดักจับคำว่า tweenfloor)
+-- =====================================================================
+
+LogService.MessageOut:Connect(
+    function(message, messageType)
+        if string.find(string.lower(message), "tweenfloor") then
+            isGameFinished = true
+            print("[DEBUG]: ตรวจพบ 'tweenfloor' ใน Console - ยืนยันจบเกม!")
+        end
+    end
+)
+
+-- =====================================================================
+-- 🔄 7. DEEP SCAN SERVER HOP FUNCTIONS
 -- =====================================================================
 
 local function FetchServerData(placeId, cursor)
@@ -114,14 +161,12 @@ local function FetchServerData(placeId, cursor)
                         return HttpService:JSONDecode(response.Body)
                     end
                 )
-                
                 if decodeSuccess then
                     return decoded
                 end
             end
         end
     end
-    
     return nil
 end
 
@@ -131,11 +176,10 @@ local function GetBestServerId()
     local currentCursor = ""
     local pagesFound = 0
     
-    print("[DEBUG]: เริ่มค้นหาเซิร์ฟเวอร์แบบ Deep Scan...")
+    print("[DEBUG]: กำลังเริ่มสแกนหาห้องแบบเจาะลึก (Deep Scan)...")
 
     while pagesFound < HopConfig.MaxPagesToScan do
         pagesFound = pagesFound + 1
-        
         local data = FetchServerData(HopConfig.TargetPlaceId, currentCursor)
         
         if data then
@@ -150,7 +194,6 @@ local function GetBestServerId()
                                 lowestPlayerCount = server.playing
                                 finalJobId = server.id
                                 
-                                -- เงื่อนไขพิเศษ: เจอห้องที่น้อยกว่าเกณฑ์ที่ตั้งไว้ ให้หยุดหาและส่งค่ากลับเลย
                                 if lowestPlayerCount <= HopConfig.MaxPlayersTarget then
                                     return finalJobId, lowestPlayerCount
                                 end
@@ -159,12 +202,8 @@ local function GetBestServerId()
                     end
                 end
                 
-                if data.nextPageCursor then
-                    if data.nextPageCursor ~= "" then
-                        currentCursor = data.nextPageCursor
-                    else
-                        break
-                    end
+                if data.nextPageCursor and data.nextPageCursor ~= "" then
+                    currentCursor = data.nextPageCursor
                 else
                     break
                 end
@@ -172,45 +211,31 @@ local function GetBestServerId()
                 break
             end
         else
-            warn("[DEBUG]: ดึงข้อมูลหน้า " .. tostring(pagesFound) .. " ล้มเหลว")
             break
         end
-        
         task.wait(0.1)
     end
-    
     return finalJobId, lowestPlayerCount
 end
 
 local function ExecuteDeepHop()
-    print("[DEBUG]: กำลังสแกนหาห้องสำหรับ Place ID: " .. tostring(HopConfig.TargetPlaceId))
-    
+    print("[DEBUG]: กำลังเตรียมการ Teleport...")
     local targetId, finalCount = GetBestServerId()
 
     if targetId then
-        print("[DEBUG]: พบเซิร์ฟเวอร์ที่คนน้อยที่สุด: " .. tostring(finalCount) .. " คน")
-        print("[DEBUG]: กำลังทำการ Teleport...")
-        
+        print("[DEBUG]: พบเป้าหมาย (" .. tostring(finalCount) .. " คน) กำลังย้ายเซิร์ฟเวอร์...")
         local success, err = pcall(
             function()
                 TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
             end
         )
-
-        if not success then
-            warn("[ERROR]: Teleport ล้มเหลว: " .. tostring(err))
-            return false
-        end
-        
-        return true
-    else
-        warn("[DEBUG]: ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไขในกระบวนการสแกนนี้")
-        return false
+        return success
     end
+    return false
 end
 
 -- =====================================================================
--- 🎒 6. INVENTORY & PLAYER DATA (MEMORY SYNC)
+-- 🎒 8. INVENTORY & PLAYER DATA CACHE (MEMORY SYNC)
 -- =====================================================================
 
 local InventoryTableCache = nil
@@ -287,7 +312,7 @@ local function UpdateCurrenciesFromMemory()
 end
 
 -- =====================================================================
--- 🚀 7. MAIN THREADS EXECUTION
+-- 🚀 9. MAIN THREADS EXECUTION
 -- =====================================================================
 
 -- [ Thread 1: Anti-AFK ]
@@ -303,40 +328,39 @@ task.spawn(
     end
 )
 
--- [ Thread 2: Deep Hop Monitor (Loop จนกว่าจะย้ายสำเร็จ) ]
+-- [ Thread 2: Deep Hop Monitor (เช็คคน + เช็ค Win + Loop ยิงจนกว่าจะย้ายได้) ]
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 2: Deep Server Hop Monitor")
+        print("[DEBUG]: เริ่มต้น Thread 2: Server Hop Monitor (Deep Scan)")
         while true do
             task.wait(10)
-            
             local currentPlayerCount = #Players:GetPlayers()
             
             if currentPlayerCount > 4 then
-                print("[DEBUG]: คนในห้อง (" .. currentPlayerCount .. ") เกิน 4 คน! เริ่มลูปพยายามย้ายเซิร์ฟเวอร์...")
-                
-                local teleportDone = false
-                
-                while not teleportDone do
-                    if HopConfig.HopMode == "PlaceID" then
-                        teleportDone = ExecuteDeepHop()
-                    end
+                if isGameFinished then
+                    print("[DEBUG]: เงื่อนไขครบ (คนเกิน + เจอ tweenfloor) เริ่มต้นกระบวนการ Hop...")
+                    local teleportDone = false
                     
-                    if not teleportDone then
-                        print("[DEBUG]: การย้ายเซิร์ฟเวอร์ล้มเหลว หรือไม่พบห้อง... กำลังรอ 5 วินาทีเพื่อลองใหม่ (Retry Loop)")
-                        task.wait(5)
+                    while not teleportDone do
+                        teleportDone = ExecuteDeepHop()
+                        if not teleportDone then
+                            print("[DEBUG]: การ Hop ล้มเหลวหรือหาห้องไม่เจอ กำลังลองใหม่ใน 5 วินาที...")
+                            task.wait(5)
+                        end
                     end
+                else
+                    print("[DEBUG]: ตรวจพบคนเกิน 4 คน แต่กำลังรอข้อความ 'tweenfloor' เพื่อจบเกมก่อนย้าย")
                 end
             end
         end
     end
 )
 
--- [ Thread 3: Horst Sync ]
+-- [ Thread 3: Horst Sync & Account Switcher ]
 local LAST_HORST_MSG = ""
 task.spawn(
     function()
-        print("[DEBUG]: เริ่มต้น Thread 3: Horst Sync")
+        print("[DEBUG]: เริ่มต้น Thread 3: Horst Sync & Account Switcher")
         while true do
             pcall(
                 function()
@@ -345,7 +369,7 @@ task.spawn(
                     if _G.Horst_AccountChangeDone then
                         local currentTicketsValue = tonumber(cachedTicketsText)
                         if currentTicketsValue and currentTicketsValue >= AccountSwitchConfig.TargetTickets then
-                            print("[DEBUG]: ตั๋วครบ! ส่งคำสั่งเปลี่ยนไอดี...")
+                            print("[DEBUG]: เงื่อนไขตั๋วครบ (" .. cachedTicketsText .. ") ส่งคำสั่งสลับไอดี!")
                             _G.Horst_AccountChangeDone()
                         end
                     end
