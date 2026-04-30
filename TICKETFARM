@@ -1,5 +1,5 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Ticket-Delta & Absolute Deep Hop ]]
+-- [[ Roblox Ticket Farming: Absolute Smallest Hop & Ticket-Delta ]]
 -- (Anti-AFK + Absolute Smallest Server Hop + Ticket Change Detect)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
@@ -63,7 +63,7 @@ local HopConfig =
     HopMode = "PlaceID",
     TargetPlaceId = game.PlaceId,
     MaxPagesToScan = 15,
-    MaxPlayersTarget = 6,
+    MaxPlayersTarget = 6,    -- เงื่อนไข: ถ้าห้องที่น้อยที่สุดยังเกิน 6 คน จะไม่วาป
     ApiLimit = 100
 }
 
@@ -137,6 +137,7 @@ end
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
+    -- ใช้ sortOrder=Desc เพื่อให้ API ส่งห้องที่คนน้อยที่สุดมาในหน้าแรกๆ
     local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=" .. tostring(HopConfig.ApiLimit)
     
     if cursor then
@@ -169,29 +170,37 @@ local function FetchServerList(placeId, cursor)
     return nil
 end
 
-local function FindBestServer()
+local function FindAbsoluteSmallestServer()
     local bestJobId = nil
     local lowestCountFound = math.huge
     local currentCursor = ""
     local pagesCompleted = 0
     
+    print("[DEBUG]: 7. เริ่มค้นหาห้องที่ว่างที่สุด (Absolute Deep Scan)...")
+
     while pagesCompleted < HopConfig.MaxPagesToScan do
         pagesCompleted = pagesCompleted + 1
         local data = FetchServerList(HopConfig.TargetPlaceId, currentCursor)
         
         if data and data.data then
             for index, server in ipairs(data.data) do
-                if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                local isNotMe = (server.id ~= game.JobId)
+                local isJoinable = (server.playing < server.maxPlayers)
+                
+                if isNotMe and isJoinable then
+                    -- เปรียบเทียบหาห้องที่คนน้อยที่สุดจริงๆ
                     if server.playing < lowestCountFound then
                         lowestCountFound = server.playing
                         bestJobId = server.id
                         
-                        if lowestCountFound <= HopConfig.MaxPlayersTarget then
+                        -- ถ้าเจอห้องที่ว่างมากๆ (เช่น 1-2 คน) ให้ข้ามการสแกนหน้าที่เหลือแล้ววาปทันที
+                        if lowestCountFound <= 2 then
                             return bestJobId, lowestCountFound
                         end
                     end
                 end
             end
+            
             if data.nextPageCursor and data.nextPageCursor ~= "" then
                 currentCursor = data.nextPageCursor
             else
@@ -206,13 +215,22 @@ local function FindBestServer()
 end
 
 local function ExecuteDeepHop()
-    local targetId, finalCount = FindBestServer()
+    local targetId, finalCount = FindAbsoluteSmallestServer()
+
     if targetId then
-        print("[DEBUG]: วาปไปห้อง " .. tostring(finalCount) .. " คน...")
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
-        end)
-        return true
+        -- ตรวจสอบเงื่อนไขสุดท้าย: ห้องที่น้อยที่สุดต้องไม่เกิน 6 คน
+        if finalCount <= HopConfig.MaxPlayersTarget then
+            print("[DEBUG]: พบห้องที่ดีที่สุดแล้ว (" .. tostring(finalCount) .. " คน) กำลังย้ายเซิร์ฟเวอร์...")
+            local success, err = pcall(
+                function()
+                    TeleportService:TeleportToPlaceInstance(HopConfig.TargetPlaceId, targetId, LocalPlayer)
+                end
+            )
+            return success
+        else
+            warn("[DEBUG]: ห้องที่ว่างที่สุดขณะนี้มี " .. tostring(finalCount) .. " คน (เกิน 6 คน) จะไม่ทำการวาป...")
+            return false
+        end
     end
     return false
 end
@@ -232,12 +250,11 @@ task.spawn(
     end
 )
 
--- [ Thread 2: Ticket Detection & Hop Monitor ]
+-- [ Thread 2: Ticket Detection & Absolute Hop Monitor ]
 task.spawn(
     function()
         print("[DEBUG]: เริ่มระบบตรวจสอบ Ticket Change...")
         
-        -- รอให้ค่า Ticket เริ่มต้นโหลดเสร็จก่อน
         repeat
             UpdateCurrenciesFromMemory()
             task.wait(1)
@@ -250,7 +267,6 @@ task.spawn(
             task.wait(5)
             UpdateCurrenciesFromMemory()
             
-            -- เช็คว่า Ticket เพิ่มขึ้นหรือยัง
             if not IsFarmDone then
                 if CurrentTicketInMem > InitialTicketValue then
                     IsFarmDone = true
@@ -258,14 +274,15 @@ task.spawn(
                 end
             end
 
-            -- เงื่อนไขการย้าย: Ticket เพิ่มแล้ว AND คนในห้อง > 4
+            -- เงื่อนไขการย้าย: Ticket เพิ่มแล้ว AND คนในห้องปัจจุบัน > 4 (คนเยอะค่อยย้าย)
             if IsFarmDone then
                 local currentPlayerCount = #Players:GetPlayers()
                 if currentPlayerCount > 4 then
-                    print("[DEBUG]: ฟาร์มเสร็จ + คนเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องว่างที่สุด...")
-                    local teleportDone = false
-                    while not teleportDone do
-                        teleportDone = ExecuteDeepHop()
+                    print("[DEBUG]: ฟาร์มเสร็จ + คนเยอะ (" .. currentPlayerCount .. " คน) เริ่มหาห้องว่างตามเงื่อนไข...")
+                    local teleportDone = ExecuteDeepHop()
+                    
+                    if not teleportDone then
+                        print("[DEBUG]: ไม่พบห้องที่ตรงตามเงื่อนไข (<= 6 คน) หรือวาปล้มเหลว จะลองใหม่ใน 5 วินาที...")
                         task.wait(5)
                     end
                 end
@@ -285,7 +302,7 @@ task.spawn(
                     
                     if _G.Horst_AccountChangeDone then
                         if CurrentTicketInMem >= AccountSwitchConfig.TargetTickets then
-                            print("[DEBUG]: ตั๋วครบเป้า สลับไอดี!")
+                            print("[DEBUG]: ตั๋วครบเป้าหมาย สลับไอดี!")
                             _G.Horst_AccountChangeDone()
                         end
                     end
