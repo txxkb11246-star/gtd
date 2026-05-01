@@ -1,6 +1,6 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Ultimate Edition V2 ]]
--- (Anti-AFK + Smart Hop + Egg Collector + Horst Log + Rafflesia Count)
+-- [[ Roblox Ticket Farming: Ultimate Edition V3 ]]
+-- (Anti-AFK + Smart Hop + Egg Collector + Horst Log + Exact Rafflesia Count)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -22,7 +22,7 @@ local HopConfig =
 
 local AccountSwitchConfig = 
 {
-    TargetTickets = 200000 --
+    TargetTickets = 200000 
 }
 
 local LogDisplayConfig = 
@@ -67,7 +67,7 @@ while not Players.LocalPlayer do
 end
 
 local LocalPlayer = Players.LocalPlayer
-DebugPrint("2. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name .. "")
+DebugPrint("2. ระบุตัวตนผู้เล่นสำเร็จ: " .. LocalPlayer.Name)
 
 -- =====================================================================
 -- 🐴 4. HORST SYSTEM (รันระบบม้าก่อนเป็นอันดับแรกตามลำดับ)
@@ -204,7 +204,7 @@ task.spawn(function()
 end)
 
 -- =====================================================================
--- 🎒 7. MEMORY DATA SYSTEM & INVENTORY SCANNER (FIXED)
+-- 🎒 7. MEMORY DATA SYSTEM & EXACT RAFFLESIA COUNTER
 -- =====================================================================
 
 local PlayerDataCache = nil
@@ -216,48 +216,54 @@ local cachedEggsText = "0"
 local CurrentTicketInMem = 0
 local InitialTicketValue = nil
 
--- แก้ไข: ให้กวาดหา Inventory Table แบบละเอียดขึ้น และไม่หยุดจนกว่าจะมั่นใจ
-local function UpdateInventoryCache()
-    local gc = getgc(true)
-    for i = 1, #gc do
-        local obj = gc[i]
-        if type(obj) == "table" then
-            -- เช็คหาโครงสร้าง Inventory ที่มี unique_id
-            local isInventory = false
-            pcall(function()
-                for k, v in pairs(obj) do
-                    if type(k) == "string" and string.find(k, "unique_", 1, true) then
-                        if v.ItemData then
-                            isInventory = true
-                            break
-                        end
-                    end
-                end
-            end)
-            
-            if isInventory then
-                InventoryTableCache = obj
-                break
-            end
-        end
-    end
-end
-
--- แก้ไข: ฟังก์ชันนับจำนวน Rafflesia ทั้งหมดที่มีในกระเป๋า
-local function GetRafflesiaCount()
-    UpdateInventoryCache()
+-- ฟังก์ชันนับจำนวนดอกไม้แบบเป็น "ตัวเลข" โดยตรง (หาจาก Cache ก่อน ถ้าไม่เจอจะสแกนใหม่)
+local function GetExactRafflesiaCount()
     local count = 0
-    
+    local foundInCache = false
+
+    -- ลองหาใน Cache ที่มีอยู่ก่อน
     if InventoryTableCache then
         pcall(function()
-            for _, data in pairs(InventoryTableCache) do
-                if data.ItemData and data.ItemData.ID == "unit_rafflesia" then
-                    count = count + 1
+            for k, v in pairs(InventoryTableCache) do
+                if type(k) == "string" and string.find(k, "unique_", 1, true) then
+                    if type(v) == "table" and v.ItemData then
+                        foundInCache = true
+                        if v.ItemData.ID == "unit_rafflesia" then
+                            count = count + 1
+                        end
+                    end
                 end
             end
         end)
     end
-    
+
+    -- ถ้าหาใน Cache ไม่สำเร็จ (Table อาจจะโดนลบไป) ให้สแกน Garbage Collection ใหม่
+    if not foundInCache then
+        local gc = getgc(true)
+        for i = 1, #gc do
+            local obj = gc[i]
+            if type(obj) == "table" then
+                local isInventory = false
+                pcall(function()
+                    for k, v in pairs(obj) do
+                        if type(k) == "string" and string.find(k, "unique_", 1, true) then
+                            if type(v) == "table" and v.ItemData then
+                                isInventory = true
+                                if v.ItemData.ID == "unit_rafflesia" then
+                                    count = count + 1
+                                end
+                            end
+                        end
+                    end
+                end)
+                if isInventory then
+                    InventoryTableCache = obj -- อัปเดต Cache ใหม่
+                    break
+                end
+            end
+        end
+    end
+
     return count
 end
 
@@ -388,7 +394,7 @@ task.spawn(function()
     until CurrentTicketInMem > 0
     
     InitialTicketValue = CurrentTicketInMem
-    DebugPrint("บันทึกค่า Ticket เริ่มต้น: " .. tostring(InitialTicketValue) .. "")
+    DebugPrint("บันทึกค่า Ticket เริ่มต้น: " .. tostring(InitialTicketValue))
 
     while true do
         task.wait(5)
@@ -427,8 +433,8 @@ task.spawn(function()
             
             -- ระบบส่ง Log ไปที่ Horst UI
             if _G.Horst_SetDescription then
-                -- แก้ไข: ดึงจำนวน Raff แบบเรียลไทม์ (ส่งไปเป็นตัวเลขเลย)
-                local raffCount = GetRafflesiaCount()
+                -- ดึงยอด Rafflesia เป็นตัวเลขชัวร์ๆ
+                local exactRaffCount = GetExactRafflesiaCount()
                 
                 local logParts = {}
                 
@@ -442,7 +448,7 @@ task.spawn(function()
                     table.insert(logParts, "🥚 " .. cachedEggsText) 
                 end
                 if LogDisplayConfig.ShowRafflesia then
-                    table.insert(logParts, "🌸 Raff: " .. tostring(raffCount))
+                    table.insert(logParts, "🌸 Raff: " .. tostring(exactRaffCount))
                 end
                 
                 local desc = table.concat(logParts, " , ")
