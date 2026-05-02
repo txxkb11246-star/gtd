@@ -22,7 +22,7 @@ local HopConfig =
 
 local AccountSwitchConfig = 
 {
-    TargetTickets = 200000 
+    TargetTickets = 750000 
 }
 
 local LogDisplayConfig = 
