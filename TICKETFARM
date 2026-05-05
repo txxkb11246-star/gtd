@@ -1,6 +1,6 @@
 -- =====================================================================
--- [[ Roblox Ticket Farming: Ultimate Edition V3 ]]
--- (Anti-AFK + Smart Hop + Egg Collector + Horst Log + Exact Rafflesia Count)
+-- [[ Roblox Ticket Farming: Ultimate Edition V4 ]]
+-- (Anti-AFK + Smart Hop + Horst Log + Exact Rafflesia Count)
 -- ⚠️ FULL-SCALE 100% BYPASS MINIFICATION
 -- =====================================================================
 
@@ -29,7 +29,6 @@ local LogDisplayConfig =
 {
     ["ShowSeeds"] = true,
     ["ShowTickets"] = true,
-    ["ShowEggs"] = true,
     ["ShowRafflesia"] = true
 }
 
@@ -100,70 +99,7 @@ else
 end
 
 -- =====================================================================
--- 🥚 5. STANDALONE: SILENT FAST EGG COLLECTOR
--- =====================================================================
-
-task.spawn(function()
-    DebugPrint("5. เริ่มระบบเก็บไข่ (Egg Collector)...")
-    
-    local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-    local CollectRemote = RemoteEvents:WaitForChild("CollectCollectable")
-    
-    local function TryCollect(obj)
-        local id = obj:GetAttribute("ID")
-        if id then
-            if type(id) == "number" then
-                pcall(function() 
-                    CollectRemote:FireServer(id) 
-                end)
-                return true
-            end
-        end
-        return false
-    end
-
-    -- 🌟 ระบบที่ 1: ดักจับไข่เกิดใหม่ (Event Listener)
-    Workspace.DescendantAdded:Connect(function(obj)
-        if TryCollect(obj) then 
-            return 
-        end
-        
-        local conn
-        conn = obj:GetAttributeChangedSignal("ID"):Connect(function()
-            TryCollect(obj)
-            if conn then 
-                conn:Disconnect() 
-            end
-        end)
-        
-        task.delay(2, function()
-            if conn then 
-                conn:Disconnect() 
-            end
-        end)
-    end)
-
-    -- 🌟 ระบบที่ 2: วนลูปกวาดไข่ที่ค้างอยู่ในแมพทั้งหมด (Sweeper Loop)
-    while true do
-        local descendants = Workspace:GetDescendants()
-        
-        for i = 1, #descendants do
-            local v = descendants[i]
-            local id = v:GetAttribute("ID")
-            
-            if id then 
-                pcall(function() 
-                    CollectRemote:FireServer(id) 
-                end) 
-            end
-        end
-        
-        task.wait(3) 
-    end
-end)
-
--- =====================================================================
--- 🟢 6. ANTI-AFK SYSTEM (SIMPLE VIM MODE WITH GREEN DOT)
+-- 🟢 5. ANTI-AFK SYSTEM (SIMPLE VIM MODE WITH GREEN DOT)
 -- =====================================================================
 
 task.spawn(function()
@@ -188,7 +124,7 @@ task.spawn(function()
     corner.CornerRadius = UDim.new(1, 0)
     corner.Parent = dot
     
-    DebugPrint("6. ระบบจุดเขียว Anti-AFK ติดตั้งเรียบร้อย")
+    DebugPrint("5. ระบบจุดเขียว Anti-AFK ติดตั้งเรียบร้อย")
 end)
 
 task.spawn(function()
@@ -204,7 +140,7 @@ task.spawn(function()
 end)
 
 -- =====================================================================
--- 🎒 7. MEMORY DATA SYSTEM & EXACT RAFFLESIA COUNTER
+-- 🎒 6. MEMORY DATA SYSTEM & EXACT RAFFLESIA COUNTER
 -- =====================================================================
 
 local PlayerDataCache = nil
@@ -212,7 +148,6 @@ local InventoryTableCache = nil
 
 local cachedSeedsText = "0"
 local cachedTicketsText = "0"
-local cachedEggsText = "0"
 local CurrentTicketInMem = 0
 local InitialTicketValue = nil
 
@@ -294,14 +229,13 @@ local function UpdateCurrenciesFromMemory()
                 CurrentTicketInMem = PlayerDataCache.Tickets or 0
                 cachedSeedsText = tostring(PlayerDataCache.Seeds or 0)
                 cachedTicketsText = tostring(CurrentTicketInMem)
-                cachedEggsText = tostring(PlayerDataCache.EasterEggs or 0)
             end
         end
     )
 end
 
 -- =====================================================================
--- 🔄 8. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
+-- 🔄 7. ABSOLUTE SMALLEST SERVER HOP FUNCTIONS
 -- =====================================================================
 
 local function FetchServerList(placeId, cursor)
@@ -381,7 +315,7 @@ local function ExecuteDeepHop()
 end
 
 -- =====================================================================
--- 🚀 9. MAIN THREADS EXECUTION
+-- 🚀 8. MAIN THREADS EXECUTION
 -- =====================================================================
 
 -- [ Thread 1: Smart Ticket Detection & Hop Monitor ]
@@ -443,9 +377,6 @@ task.spawn(function()
                 end
                 if LogDisplayConfig.ShowTickets then 
                     table.insert(logParts, "🎟️ " .. cachedTicketsText) 
-                end
-                if LogDisplayConfig.ShowEggs then 
-                    table.insert(logParts, "🥚 " .. cachedEggsText) 
                 end
                 if LogDisplayConfig.ShowRafflesia then
                     table.insert(logParts, "🌸 Raff: " .. tostring(exactRaffCount))
