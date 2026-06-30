@@ -1,5 +1,5 @@
 repeat task.wait() until game:IsLoaded()
-task.wait(10)
+task.wait(0)
 -- [[ 🌋 COMBINED SCRIPT: VOLCANO LOBBY + FARM + SKIP + SYSTEM (RAM SCANNER + FULL HORST LOG + AUTO CHANGE ID) ]] --
 
 -- ==================================================================
@@ -86,7 +86,7 @@ local LogDisplayConfig = {
     ["ShowTrident"] = true
 }
 
-local AutoChangeConfig = {
+local AutoChangeConfig = (getgenv and getgenv().AutoChangeConfig) or {
     ["TargetSeeds"] = 1200000, 
     ["EnableAutoChange"] = true,
     ["EnableChangeIfMissingUnit"] = true
