@@ -7,6 +7,202 @@ task.wait(0) -- รอข้อมูลเกมพร้อม (Map, RemoteFun
 local getgc = getgc or get_gc_objects or function() return {} end
 local GetProgress -- ประกาศไว้ก่อนเพื่อกัน Error: attempt to call a nil value
 
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local LogDisplayConfig = {
+    ["ShowSeeds"] = true,
+    ["ShowLuckyBlocks"] = true,
+    ["ShowTickets"] = false,
+    ["Show25Win"] = true,
+    ["ShowRafflesia"] = true,
+    ["ShowTomatoPlant"] = true,
+    ["ShowTrident"] = true
+}
+
+getgenv().DebugConfig = getgenv().DebugConfig or {
+    ["EnableDebug"] = false
+}
+
+-- 🐴 HORST LOG SYSTEM
+local PlayerDataCache = nil
+local StatsDataCache = nil
+local InventoryTableCache = nil
+local cachedSeedsText = "0"
+local cachedLuckyBlocksText = "0"
+
+local function UpdateInventoryCache()
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            pcall(function()
+                for uid, data in pairs(obj) do
+                    if type(uid) == "string" then
+                        if string.find(uid, "unique_", 1, true) then
+                            if data.ItemData then
+                                if data.ItemData.ID then
+                                    InventoryTableCache = obj
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            if InventoryTableCache then break end
+        end
+    end
+    table.clear(gc)
+    gc = nil
+end
+
+local function HasRafflesia()
+    if not InventoryTableCache then UpdateInventoryCache() end
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
+                if data.ItemData and data.ItemData.ID and data.ItemData.ID == "unit_rafflesia" then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function HasTomatoPlant()
+    if not InventoryTableCache then UpdateInventoryCache() end
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
+                if data.ItemData and data.ItemData.ID and data.ItemData.ID == "unit_tomato_plant" then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function GetTridentCount()
+    if not InventoryTableCache then UpdateInventoryCache() end
+    local count = 0
+    if InventoryTableCache then
+        for uid, data in pairs(InventoryTableCache) do
+            if type(uid) == "string" and string.find(uid, "unique_", 1, true) then
+                if data.ItemData and data.ItemData.ID and data.ItemData.ID == "unit_trident" then
+                    count = count + 1
+                end
+            end
+        end
+    end
+    return count
+end
+
+local function UpdateCurrenciesAndStatsFromMemory()
+    pcall(function()
+        local lp = Players.LocalPlayer
+        if lp then
+            game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("GetPlayerDisplayProfile"):InvokeServer(lp.Name)
+        end
+    end)
+    
+    local gc = getgc(true)
+    for i = 1, #gc do
+        local obj = gc[i]
+        if type(obj) == "table" then
+            local seeds = rawget(obj, "Seeds")
+            if type(seeds) == "number" then
+                local tickets = rawget(obj, "Tickets")
+                if type(tickets) == "number" then
+                    PlayerDataCache = obj
+                end
+            end
+            
+            local gamesWon = rawget(obj, "GamesWon")
+            if type(gamesWon) == "number" then
+                local timePlayed = rawget(obj, "TotalTimePlayed")
+                if type(timePlayed) == "number" then
+                    StatsDataCache = obj
+                end
+            end
+        end
+    end
+    table.clear(gc)
+    gc = nil
+end
+
+local function UpdateCurrenciesFromMemory()
+    pcall(function()
+        UpdateCurrenciesAndStatsFromMemory()
+        if PlayerDataCache then
+            if PlayerDataCache.Seeds then cachedSeedsText = tostring(PlayerDataCache.Seeds) end
+            if PlayerDataCache.LuckyBlocks then cachedLuckyBlocksText = tostring(PlayerDataCache.LuckyBlocks) end
+        end
+    end)
+end
+
+-- 🚀 HORST LAUNCHER
+task.spawn(function()
+    while true do
+        pcall(function()
+            if not getgenv().HorstRunning then
+                getgenv().HorstConfig = {
+                    ["EnableLog"] = false, ["Whitescreen"] = false, ["EnableAddFriends"] = false,
+                    ["LockFps"] = { ["EnableLockFps"] = false, ["LockFpsAmount"] = 30 }
+                }
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/HorstSpaceX/last_update/main/on_loaded.lua"))()
+                getgenv().HorstRunning = true
+            end
+        end)
+        task.wait(30)
+    end
+end)
+
+-- 📡 HORST LOG SYNC THREAD
+local LAST_HORST_MSG = ""
+task.spawn(function()
+    while true do
+        pcall(function()
+            if _G.Horst_SetDescription then
+                UpdateCurrenciesFromMemory()
+                
+                local hasRaff = HasRafflesia()
+                local raffStr = hasRaff and "✅" or "❌"
+                local hasTomato = HasTomatoPlant()
+                local tomatoStr = hasTomato and "✅" or "❌"
+                local tridentCount = GetTridentCount()
+                
+                local logParts = {}
+                if LogDisplayConfig.ShowSeeds then table.insert(logParts, string.format("🌱 %s", cachedSeedsText)) end
+                if LogDisplayConfig.ShowLuckyBlocks then table.insert(logParts, string.format("🍀 %s", cachedLuckyBlocksText)) end
+                if LogDisplayConfig.Show25Win then
+                    local winStr = "❌"
+                    if StatsDataCache and type(StatsDataCache.GamesWon) == "number" then
+                        if StatsDataCache.GamesWon >= 25 then winStr = "✅" end
+                    end
+                    table.insert(logParts, string.format("🏆 25Win: %s", winStr))
+                end
+                if LogDisplayConfig.ShowRafflesia then table.insert(logParts, string.format("🌸 Raff: %s", raffStr)) end
+                if LogDisplayConfig.ShowTomatoPlant then table.insert(logParts, string.format("🍅 Tomato: %s", tomatoStr)) end
+                if LogDisplayConfig.ShowTrident then table.insert(logParts, string.format("🔱 Trident: %d", tridentCount)) end
+                
+                table.insert(logParts, "📦 LuckyBox Quest")
+                
+                local desc = table.concat(logParts, " , ")
+                local json_data = { ["Quest"] = desc }
+                local encode_json = HttpService:JSONEncode(json_data)
+                
+                if desc ~= LAST_HORST_MSG then
+                    LAST_HORST_MSG = desc
+                    _G.Horst_SetDescription(desc, encode_json)
+                end
+            end
+        end)
+        task.wait(10)
+    end
+end)
+
 --=============================================
 -- 🔄 ระบบ Server Hop (ย้ายเซิร์ฟเวอร์)
 --=============================================
