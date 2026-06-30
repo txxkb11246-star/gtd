@@ -1,1 +1,490 @@
+-- รอเกมโหลดเสร็จก่อน
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(0) -- รอข้อมูลเกมพร้อม (Map, RemoteFunctions, etc.)
 
+local getgc = getgc or get_gc_objects or function() return {} end
+local GetProgress -- ประกาศไว้ก่อนเพื่อกัน Error: attempt to call a nil value
+
+--=============================================
+-- 🔄 ระบบ Server Hop (ย้ายเซิร์ฟเวอร์)
+--=============================================
+local function HopServer(findLeastPlayers)
+    local HttpService = game:GetService("HttpService")
+    local TeleportService = game:GetService("TeleportService")
+    local PlaceId = game.PlaceId
+    local JobId = game.JobId
+    
+    local sortOrder = findLeastPlayers and "Asc" or "Desc"
+    local logMsg = findLeastPlayers and "น้อยที่สุด" or "เยอะที่สุด (แต่ไม่เต็ม)"
+    
+    print("🔄 [Server Hop] กำลังค้นหาเซิร์ฟเวอร์ที่คน" .. logMsg .. "...")
+    
+    local success, result = pcall(function()
+        -- ใช้ sortOrder ตามที่กำหนดเพื่อหาห้องคนเยอะ/คนน้อย
+        local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=" .. sortOrder .. "&limit=100"
+        local response = game:HttpGet(url)
+        local data = HttpService:JSONDecode(response)
+        
+        local env = (getgenv and getgenv()) or _G
+        env.BlacklistedServers = env.BlacklistedServers or {}
+        env.BlacklistedServers[JobId] = true -- แบล็กลิสต์ห้องปัจจุบันและห้องที่เคยไปมาแล้ว
+        
+        local availableServers = {}
+        for _, server in ipairs(data.data) do
+            -- หาเซิร์ฟที่คนยังไม่เต็ม และต้องไม่ใช่ห้องที่เคยไปมาแล้วใน Session นี้
+            if type(server) == "table" and server.playing and server.maxPlayers then
+                if server.playing < server.maxPlayers and server.id ~= JobId and not env.BlacklistedServers[server.id] then
+                    table.insert(availableServers, server)
+                    if not findLeastPlayers then
+                        break -- ถ้าหาห้องคนเยอะสุด (Desc) ให้เอาห้องแรกที่เจอเลยตามปกติ
+                    end
+                end
+            end
+        end
+        
+        if #availableServers > 0 then
+            local selectedServer
+            if findLeastPlayers then
+                -- ใช้ Random.new() เพื่อให้สุ่มได้ผลลัพธ์ใหม่จริงๆ ทุกครั้ง (แก้ปัญหา math.random ล็อกเลขเดิม)
+                selectedServer = availableServers[Random.new():NextInteger(1, #availableServers)]
+            else
+                selectedServer = availableServers[1]
+            end
+            
+            print(string.format("🔄 [Server Hop] พบห้องเหมาะสม! คนเล่น: %d/%d | กำลังย้ายเซิร์ฟเวอร์...", selectedServer.playing, selectedServer.maxPlayers))
+            TeleportService:TeleportToPlaceInstance(PlaceId, selectedServer.id, game.Players.LocalPlayer)
+            task.wait(10)
+        end
+    end)
+    
+    if not success then
+        warn("⚠️ [Server Hop] ค้นหา Server แบบเจาะจงไม่สำเร็จ ใช้การสุ่มย้ายห้องแทน (Fallback)")
+        TeleportService:Teleport(PlaceId, game.Players.LocalPlayer)
+    end
+end
+
+--=============================================
+-- 📦 ระบบจัดการเควส Lucky Box (Quest List)
+--=============================================
+local QuestList = {
+    {
+        Name = "Foraged Flowering Lucky Block",
+        Ref = "cl_lucky26_flower",
+        Limit = 1,
+        DoQuest = function(self)
+            local Players = game:GetService("Players")
+            local LocalPlayer = Players.LocalPlayer
+            local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local HRP = Character:WaitForChild("HumanoidRootPart")
+            
+            print("⏳ [Quest] เริ่มค้นหาดอกไม้สำหรับ: " .. self.Name)
+            
+            -- วนลูปทำไปเรื่อยๆ จนกว่าความคืบหน้าจะครบ (เช็คสดๆ จากแรมตลอดเวลา)
+            while GetProgress(self.Ref) < self.Limit do
+                local mapFolder = workspace:FindFirstChild("Map")
+                if not mapFolder then
+                    warn("❌ [Quest] หา workspace.Map ไม่เจอ!")
+                    task.wait(2)
+                    continue
+                end
+                
+                -- เก็บรายการ Flower ทั้งหมดที่ยังมีอยู่ใน Map โดยเอาเฉพาะที่มองเห็นได้ (Transparency == 0)
+                local flowerPrompts = {}
+                for _, desc in ipairs(mapFolder:GetDescendants()) do
+                    if desc:IsA("ProximityPrompt") and desc.Name == "FlowerPrompt" and desc.Parent then
+                        local part = desc:FindFirstAncestorWhichIsA("BasePart")
+                        -- ถ้าหา Part เจอ และมันยังไม่ล่องหน (0 = ยังไม่ถูกเก็บ) ให้เพิ่มลงในคิวเก็บ
+                        if part and part.Transparency == 0 then
+                            table.insert(flowerPrompts, desc)
+                        end
+                    end
+                end
+                
+                if #flowerPrompts == 0 then
+                    print("⏳ [Quest] หาดอกไม้ไม่เจอหรือเก็บหมดแล้ว รอเกิดใหม่/รอเซิฟเวอร์อัปเดต...")
+                    task.wait(3)
+                else
+                    print(string.format("🌸 [Quest] พบดอกไม้ %d ดอก! เริ่มไล่เก็บทีละดอก...", #flowerPrompts))
+                    
+                    for idx, prompt in ipairs(flowerPrompts) do
+                        -- เช็คว่า Prompt ยังอยู่ใน Map จริงๆ (ไม่ถูกลบไป)
+                        if prompt and prompt.Parent then
+                            local part = prompt:FindFirstAncestorWhichIsA("BasePart")
+                            
+                            if part then
+                                print(string.format("🌸 [Quest] เก็บดอกที่ %d/%d | กำลังวาร์ปไป...", idx, #flowerPrompts))
+                                
+                                -- วาร์ปไปตรงดอกไม้ (ลอยเหนือขึ้นมานิด)
+                                HRP.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+                                HRP.Velocity = Vector3.new(0, 0, 0)
+                                
+                                task.wait(1) -- รอให้ Server รับรู้ตำแหน่งใหม่
+                                
+                                -- สั่งกดรัวๆ 5 รอบ เพิ่มโอกาสเก็บติด
+                                for i = 1, 5 do
+                                    if prompt and prompt.Parent then
+                                        fireproximityprompt(prompt)
+                                        task.wait(0.4)
+                                    end
+                                end
+                                print("🌸 [Quest] สั่ง Fire ProximityPrompt ดอกไม้แล้ว!")
+                                
+                                task.wait(1) -- ดีเลย์ระหว่างดอก รอ Server อัปเดต
+                                
+                                -- ถ้าเควสผ่านแล้วออกเลย
+                                if GetProgress(self.Ref) >= self.Limit then
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    
+                    -- ไล่ครบทุกดอกแล้วแต่ยังไม่ผ่าน = มีตัวหลุดรอด วนเก็บใหม่ทั้งหมด
+                    if GetProgress(self.Ref) < self.Limit then
+                        print("♻️ [Quest] เก็บครบรอบแล้วแต่ยังไม่ผ่าน! วนสแกนหาดอกไม้เก็บซ้ำทั้งหมดอีกรอบ...")
+                        task.wait(2) -- รอแป๊บก่อนวนรอบใหม่
+                    end
+                end
+                task.wait(0.5)
+            end
+            
+            print(string.format("✅ [ผ่านแล้ว] เควส: %s", self.Name))
+        end
+    },
+    {
+        Name = "Flimsy Fence Lucky Block",
+        Ref = "cl_lucky26_fence",
+        Limit = 1,
+        DoQuest = function(self)
+            local Players = game:GetService("Players")
+            local LocalPlayer = Players.LocalPlayer
+            local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local HRP = Character:WaitForChild("HumanoidRootPart")
+            
+            print("⏳ [Quest] เริ่มค้นหารั้ว (Fence) สำหรับ: " .. self.Name)
+            local isFirstScan = true
+            
+            while GetProgress(self.Ref) < self.Limit do
+                -- หา ClickDetector ทั้งหมดใน Workspace ที่เกี่ยวกับ Fence
+                local fenceDetectors = {}
+                local isAlreadyBroken = false
+                
+                for _, desc in ipairs(workspace:GetDescendants()) do
+                    if desc:IsA("ClickDetector") then
+                        -- เช็คย้อนกลับขึ้นไป 4 ชั้น ว่าตัวมันอยู่ใน Model หรือ Folder ที่ชื่อ Fence/Fences หรือไม่
+                        local curr = desc.Parent
+                        local isFence = false
+                        
+                        for i = 1, 4 do
+                            if curr then
+                                if curr.Name == "Fence" or curr.Name == "Fences" then
+                                    isFence = true
+                                    break
+                                end
+                                curr = curr.Parent
+                            else
+                                break
+                            end
+                        end
+                        
+                        if isFence then
+                            -- ถ้าพ่อของ ClickDetector (หรือ BasePart ที่เจอ) ล่องหนแปลว่ามีคนทุบไปแล้ว
+                            local part = desc:FindFirstAncestorWhichIsA("BasePart")
+                            if part and part.Transparency == 1 then
+                                isAlreadyBroken = true
+                            elseif part and part.Transparency == 0 then
+                                -- ถ้ายังไม่ล่องหน ให้เอาใส่คิวไปทุบ
+                                table.insert(fenceDetectors, desc)
+                            end
+                        end
+                    end
+                end
+                
+                -- เช็คเฉพาะรอบแรกที่เข้ามา ถ้ามีคนทุบไปแล้วให้ย้ายห้องเลย
+                if isFirstScan and isAlreadyBroken then
+                    print("⚠️ [Quest] รั้วในเซิร์ฟนี้มีคนทุบไปแล้ว (Transparency=1)! ข้ามไปหาเซิร์ฟเวอร์ที่คนน้อยที่สุด...")
+                    HopServer(true)
+                    task.wait(10)
+                    continue
+                end
+                isFirstScan = false
+                
+                if #fenceDetectors == 0 then
+                    print("⏳ [Quest] หาที่กดรั้วไม่เจอ หรือเก็บหมดแล้ว รอเกิดใหม่/รอเซิฟเวอร์อัปเดต...")
+                    task.wait(3)
+                else
+                    print(string.format("🚧 [Quest] พบจุดกดรั้วทั้งหมด %d จุด! เริ่มไล่ทุบทีละอัน...", #fenceDetectors))
+                    
+                    for idx, detector in ipairs(fenceDetectors) do
+                        if detector and detector.Parent then
+                            local part = detector:FindFirstAncestorWhichIsA("BasePart")
+                            
+                            if part then
+                                -- วาร์ปเหนือรั้วนิดหน่อย กันติดดิน
+                                HRP.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+                                HRP.Velocity = Vector3.new(0, 0, 0)
+                                
+                                task.wait(0.3) -- ClickDetector ไม่ต้องรอนาน ไม่เหมือน ProximityPrompt
+                                
+                                -- กด 2 ที พอ (ClickDetector ติดง่ายกว่า)
+                                for i = 1, 2 do
+                                    if detector and detector.Parent then
+                                        fireclickdetector(detector)
+                                        task.wait(0.2)
+                                    end
+                                end
+                                
+                                task.wait(0.3) -- ดีเลย์สั้นๆ ระหว่างรั้ว
+                                
+                                -- เช็คผ่านเลยไหม
+                                if GetProgress(self.Ref) >= self.Limit then
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    
+                    -- ไล่ครบทุกอันแล้วยังไม่ผ่าน
+                    if GetProgress(self.Ref) < self.Limit then
+                        print("♻️ [Quest] ทุบครบรอบแล้วแต่ยังไม่ผ่าน! วนสแกนทุบรั้วที่เหลือซ้ำอีกรอบ...")
+                        task.wait(1)
+                    end
+                end
+                task.wait(0.3)
+            end
+            
+            print(string.format("✅ [ผ่านแล้ว] เควส: %s", self.Name))
+        end
+    },
+    {
+        Name = "Proud Profile Lucky Block",
+        Ref = "cl_lucky26_profile",
+        Limit = 1,
+        DoQuest = function(self)
+            local Players = game:GetService("Players")
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local GetProfileRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("GetPlayerDisplayProfile")
+            
+            print("⏳ [Quest] เริ่มค้นหาผู้เล่นเพื่อดู Profile สำหรับ: " .. self.Name)
+            
+            while GetProgress(self.Ref) < self.Limit do
+                local playersList = Players:GetPlayers()
+                local checkedCount = 0
+                
+                for _, player in ipairs(playersList) do
+                    -- ข้ามตัวเอง
+                    if player ~= Players.LocalPlayer then
+                        print(string.format("🔍 [Quest] ดึงข้อมูล Profile ของ: %s", player.Name))
+                        
+                        -- ส่ง Username เข้า Remote
+                        pcall(function()
+                            local args = { [1] = player.Name }
+                            GetProfileRemote:InvokeServer(unpack(args))
+                        end)
+                        
+                        checkedCount = checkedCount + 1
+                        task.wait(0.4) -- ดีเลย์ 0.4 วิ ตามที่กำหนด
+                        
+                        -- ถ้าสำเร็จกลางคันให้ออกลูปเลย
+                        if GetProgress(self.Ref) >= self.Limit then
+                            break
+                        end
+                    end
+                end
+                
+                if GetProgress(self.Ref) < self.Limit then
+                    if checkedCount == 0 then
+                        print("⚠️ [Quest] ไม่มีผู้เล่นคนอื่นในห้องนี้เลย! กำลังทำการย้ายเซิร์ฟเวอร์...")
+                    else
+                        print("⚠️ [Quest] เช็ค Profile ครบทุกคนแล้วแต่ยังไม่ผ่าน! กำลังทำการย้ายเซิร์ฟเวอร์...")
+                    end
+                    HopServer()
+                    task.wait(10) -- รอให้ระบบเทเลพอร์ตทำงาน ถ้าล้มเหลวก็วนลูปซ้ำ
+                end
+            end
+            
+            print(string.format("✅ [ผ่านแล้ว] เควส: %s", self.Name))
+        end
+    }
+}
+
+--=============================================
+-- 🔍 ระบบสแกนหาข้อมูล Inventory ผู้เล่นในแรม (v8 - Global Table Cache)
+-- หลักการ:
+--   1. สแกนหาตาราง Inventory แค่ "ตารางเดียว" แล้วจำไว้ใช้ตลอดกาล
+--   2. ต่อให้เควสใหม่ยังเป็น 0 (ยังไม่มีคีย์ในตาราง) ก็ไม่ทำให้สคริปต์สแกน GC ซ้ำ
+--   3. 0 RAM Leak แน่นอน เพราะอ่านค่าจากตารางตรงๆ
+--=============================================
+
+local _inventoryTable = nil
+local _lastScanTime = 0
+local KNOWN_KEYS = {
+    "cl_lucky26_flower", "cl_lucky26_fence", "cl_lucky26_profile", 
+    "cl_lucky26_barn", "cl_lucky26_tree", "cl_lucky26_gnome",
+    "cl_lucky26_daily", "cl_lucky26_daily_group"
+}
+
+GetProgress = function(refKey)
+    -- 1. ถ้ามีตารางอยู่แล้ว ลองอ่านค่าเลย (เร็วสุดๆ)
+    if _inventoryTable then
+        local ok, val = pcall(function() return rawget(_inventoryTable, refKey) end)
+        if ok then
+            if type(val) == "number" then return val end
+            if val == nil then return 0 end -- คีย์ยังไม่ถูกสร้าง ถือว่าเป็น 0 ทันที (ไม่สแกนซ้ำ!)
+        else
+            _inventoryTable = nil -- ตารางพัง รีเซ็ต
+        end
+    end
+    
+    -- 2. ถ้ายังไม่เคยหาตารางเจอ ให้สแกนหา (Rate Limit 2 วิ ป้องกันแรมบวม)
+    local now = os.clock()
+    if (now - _lastScanTime) < 2 then
+        return 0
+    end
+    _lastScanTime = now
+    
+    local gc = getgc(true)
+    local bestTable = nil
+    local maxKeys = 0
+    
+    for _, v in pairs(gc) do
+        if type(v) == "table" then
+            local ok, keyCount = pcall(function()
+                -- ลองหาคีย์ที่น่าจะมีอยู่ในตาราง (O(1) เช็คเร็วมาก)
+                local hasKnown = false
+                local isGlobalStats = false
+                
+                for _, k in ipairs(KNOWN_KEYS) do
+                    local val = rawget(v, k)
+                    if type(val) == "number" then
+                        hasKnown = true
+                        -- ค่าของเควสปกติจะอยู่แค่ 1-50 (Limit) ถ้าค่าเกิน 50 
+                        -- แปลว่านี่คือตาราง 'สถิติรวมของทั้งเซิร์ฟเวอร์ (Global Stats)' ไม่ใช่กระเป๋าผู้เล่น
+                        if val > 50 then
+                            isGlobalStats = true
+                            break
+                        end
+                    end
+                end
+                
+                if not hasKnown or isGlobalStats then return 0 end
+                
+                -- นับจำนวนคีย์ในตารางนี้ เพื่อหาตารางกระเป๋าที่ใหญ่ที่สุด (กันไปจำตารางขยะ/ชั่วคราว)
+                local count = 0
+                for _ in pairs(v) do count = count + 1 end
+                return count
+            end)
+            
+            if ok and keyCount > maxKeys then
+                maxKeys = keyCount
+                bestTable = v
+            end
+        end
+    end
+    
+    table.clear(gc)
+    gc = nil
+    
+    if bestTable then
+        print(string.format("🎯 [Scanner] จำตาราง Inventory หลักแล้ว! (มีข้อมูลในกระเป๋า %d ชิ้น)", maxKeys))
+        _inventoryTable = bestTable
+        
+        -- อ่านค่าอีกรอบหลังจากหาตารางเจอ
+        local ok, val = pcall(function() return rawget(_inventoryTable, refKey) end)
+        if ok and type(val) == "number" then return val end
+    end
+    
+    return 0
+end
+
+-- ทดสอบระบบสแกนตอนเริ่มต้น
+print("🔍 กำลังทดสอบระบบสแกนความคืบหน้า (v8)...")
+print(string.format("📊 [ทดสอบ] cl_lucky26_flower = %d", GetProgress("cl_lucky26_flower")))
+
+--=============================================
+-- 🚀 ระบบ Thread แยกสำหรับการรันคิวเควส
+--=============================================
+task.spawn(function()
+    print("\n==========================================")
+    print("🚀 เริ่มระบบ Auto-Farm Quest")
+    print("==========================================\n")
+    
+    for _, quest in ipairs(QuestList) do
+        local progress = GetProgress(quest.Ref)
+        
+        if progress >= quest.Limit then
+            -- เควสเสร็จแล้ว ให้ข้าม
+            print(string.format("✅ [ผ่านแล้ว] เควส: %s (ความคืบหน้า %d/%d) -> ข้าม", quest.Name, progress, quest.Limit))
+        else
+            -- ยังไม่เสร็จ ให้ทำเควส
+            print(string.format("🎯 [กำลังเริ่ม] เควส: %s (ความคืบหน้า %d/%d)", quest.Name, progress, quest.Limit))
+            
+            quest:DoQuest()
+            
+            -- TODO: ในอนาคตเราอาจจะต้องมี loop รอจนกว่า progress จะอัปเดต หรือกล่องจะดรอป
+        end
+    end
+    
+    print("\n==========================================")
+    print("🎉 สิ้นสุดคิวเควสทั้งหมดที่มีในตอนนี้!")
+    print("==========================================")
+    
+    -- 🚩 ส่งสัญญาณให้ Launcher รู้ว่าเควส Lucky Box เสร็จหมดแล้ว
+    local env = (getgenv and getgenv()) or _G
+    env.LuckyBoxQuestsDone = true
+end)
+
+--=============================================
+-- 🎁 ระบบจัดการกล่องดรอป (Collector Thread)
+--=============================================
+task.spawn(function()
+    local Workspace = game:GetService("Workspace")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local CollectRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("CollectCollectable")
+    
+    -- ฟังก์ชันสำหรับตรวจสอบและเก็บกล่อง
+    local function TryCollect(obj)
+        -- เช็คชื่อ Object
+        if obj.Name == "Collectable" then
+            -- เช็คว่าเป็นของอีเวนต์ lucky26
+            if obj:GetAttribute("CollectionId") == "lucky26" then
+                local id = obj:GetAttribute("ID")
+                local itemId = obj:GetAttribute("ItemId") or "ไม่ทราบชื่อ"
+                
+                if id and type(id) == "number" then
+                    -- แยก Thread ป้องกันสคริปต์ค้างจาก InvokeServer
+                    task.spawn(function()
+                        local success, result = pcall(function()
+                            return CollectRemote:InvokeServer(id)
+                        end)
+                        
+                        if success then
+                            print(string.format("🎁 [เก็บสำเร็จ] ชนิด: %s | ID: %d", tostring(itemId), id))
+                        else
+                            print(string.format("❌ [ล้มเหลว] ไม่สามารถเก็บ: %s | ID: %d", tostring(itemId), id))
+                        end
+                    end)
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    
+    -- ระบบที่ 1: กวาดเก็บกล่องที่ตกค้างอยู่ใน Workspace ปัจจุบันทั้งหมด
+    local children = Workspace:GetChildren()
+    for i = 1, #children do
+        TryCollect(children[i])
+    end
+    
+    -- ระบบที่ 2: ดักจับกล่องที่กำลังจะดรอปใหม่
+    Workspace.ChildAdded:Connect(function(obj)
+        -- รอโหลด Attribute แป๊บนึงเผื่อเซิร์ฟเวอร์ส่งมาไม่ทัน
+        task.wait(0.1)
+        TryCollect(obj)
+    end)
+    
+    print("✅ ระบบ Collector เริ่มทำงาน: ดักเก็บ Luckybox อัตโนมัติ")
+end)
